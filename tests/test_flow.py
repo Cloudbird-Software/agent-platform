@@ -97,6 +97,17 @@ def test_compile_structure(reg: Path) -> None:
         assert f'phase("{p}")' in src
 
 
+def test_compile_schemas_are_dicts_at_runtime(reg: Path) -> None:
+    """回归：schema 常量曾被双重花括号包成 set 字面量（运行时 unhashable，
+    AST 合法故旧 lint 漏网）——模块级真实求值必须是 dict。"""
+    snap = RegistryLoader().load(reg)
+    src = compile_team_flow(snap, team=snap.teams["mini-wave"], graph=_graph(reg))
+    ns: dict = {}
+    exec(compile(src, "<t>", "exec"), {"__name__": "t"}, ns)
+    for name in ("SCHEMA_WAVE_PLAN", "SCHEMA_GATE", "SCHEMA_REVIEW"):
+        assert isinstance(ns[name], dict), f"{name} 必须是 dict（set 字面量回归？）"
+
+
 def test_flow_outputs_skips_non_renderable(reg: Path) -> None:
     snap = RegistryLoader().load(reg)
     outs = flow_outputs(snap, _graph(reg))
