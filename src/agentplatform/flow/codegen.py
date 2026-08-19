@@ -61,6 +61,22 @@ def _steps_text(snap: SpecSnapshot, agent_ref: str) -> str:
     return (snap.root / rel).read_text(encoding="utf-8").strip()
 
 
+def _seat_alias(snap: SpecSnapshot, member: dict[str, Any]) -> str:
+    """座位成员的模型 alias（agent 声明 model.alias → models.yaml 登记项）。"""
+    return str(snap.model_of(snap.resolve_agent(member["agent"])).get("alias") or "")
+
+
+def _alias_for_use(snap: SpecSnapshot, use: str) -> str:
+    """按用途解析 alias（如 verdict worker 取 use_for=arbitration——判卷异族，
+    ADR-0010 族级独立性：judge 必须异于争议双方 builder/test_author）。"""
+    hits = [a for a, m in snap.models.items() if use in (m.get("use_for") or [])]
+    if not hits:
+        raise SpecError(
+            "reference", f"models.yaml 无 use_for 含 {use} 的 alias（verdict worker 无模型可归因）"
+        )
+    return sorted(hits)[0]
+
+
 def _prompt(title: str, seat: str, steps: str) -> str:
     body = steps or "（无固定流程声明——按卡目标与验收引用执行）"
     return f"{title}（seat={seat}）。固定流程：\n{body}"
@@ -180,6 +196,13 @@ def _delivery_body(snap: SpecSnapshot, team: Entity, seats: dict[str, list[dict[
     plan_steps = _steps_text(snap, plan_m[0]["agent"]) if plan_m else ""
     build_steps = _steps_text(snap, build_m[0]["agent"]) if build_m else ""
     review_steps = _steps_text(snap, review_m[0]["agent"]) if review_m else ""
+    # 模型归因（声明驱动）：座位 alias 来自 agent 声明 model.alias；verdict worker
+    # 按 use_for=arbitration 解析（判卷必须异族——ADR-0010：judge 异于争议双方）。
+    # agent() 无 hint 时上游 backend 传 resolver(None)——账本模型归因也缺。
+    plan_model = _seat_alias(snap, plan_m[0]) if plan_m else ""
+    build_model = _seat_alias(snap, build_m[0]) if build_m else ""
+    review_model = _seat_alias(snap, review_m[0]) if review_m else ""
+    verdict_model = _alias_for_use(snap, "arbitration")
 
     L: list[str] = []
     a = L.append
@@ -194,7 +217,10 @@ def _delivery_body(snap: SpecSnapshot, team: Entity, seats: dict[str, list[dict[
     a(f"{_INDENT}from swarmflow import agent")
     a(f"{_INDENT}return await agent(")
     a(f'{_INDENT}{_INDENT}f\'{{BUILD_PROMPT}}\\n卡：{{card["id"]}} {{card["goal"]}}\',')
-    a('{i}{i}label=f\'builder:{{card["id"]}}\', phase="build", schema=None,'.replace("{i}", _INDENT * 2))
+    a(
+        '{i}{i}label=f\'builder:{{card["id"]}}\', phase="build", schema=None,'
+        f' options={{"model": "{build_model}"}},'.replace("{i}", _INDENT * 2)
+    )
     a(f"{_INDENT})")
     a("")
     a("async def run(args):")
@@ -202,7 +228,10 @@ def _delivery_body(snap: SpecSnapshot, team: Entity, seats: dict[str, list[dict[
     a("")
     a(f"{_INDENT}# ---- plan：planner 产波次计划（cards 结构化输出）----")
     a(f'{_INDENT}phase("plan")')
-    a(f'{_INDENT}plan = await agent(PLAN_PROMPT, label="planner", phase="plan", schema=SCHEMA_WAVE_PLAN)')
+    a(
+        f'{_INDENT}plan = await agent(PLAN_PROMPT, label="planner", phase="plan",'
+        f' schema=SCHEMA_WAVE_PLAN, options={{"model": "{plan_model}"}})'
+    )
     a(f'{_INDENT}cards = (plan or {{}}).get("cards", [])')
     a(f'{_INDENT}log(f"波次计划：{{len(cards)}} 卡")')
     a("")
@@ -220,9 +249,15 @@ def _delivery_body(snap: SpecSnapshot, team: Entity, seats: dict[str, list[dict[
     i3, i4 = _INDENT * 3, _INDENT * 4
     a(f"{_INDENT}{_INDENT}gate, review = await parallel([")
     a(f"{i3}lambda: agent(")
-    a(f'{i4}GATE_PROMPT, label="verifier", phase="verify", schema=SCHEMA_GATE),')
+    a(
+        f'{i4}GATE_PROMPT, label="verifier", phase="verify", schema=SCHEMA_GATE,'
+        f' options={{"model": "{verdict_model}"}}),'
+    )
     a(f"{i3}lambda: agent(")
-    a(f'{i4}REVIEW_PROMPT, label="test_author", phase="verify", schema=SCHEMA_REVIEW),')
+    a(
+        f'{i4}REVIEW_PROMPT, label="test_author", phase="verify", schema=SCHEMA_REVIEW,'
+        f' options={{"model": "{review_model}"}}),'
+    )
     a(f"{_INDENT}{_INDENT}])")
     a(f"{_INDENT}{_INDENT}verdict = _merge_verdict(gate, review)")
     a(f'{_INDENT}{_INDENT}log(f"判卷：{{verdict}}")')
@@ -240,7 +275,10 @@ def _delivery_body(snap: SpecSnapshot, team: Entity, seats: dict[str, list[dict[
     a(f'{_INDENT}phase("handoff")')
     a(f"{_INDENT}await agent(")
     a(f'{_INDENT}{_INDENT}"产 retrospective 与 memory_digest 导出（交接相位唯一在场座位）",')
-    a(f'{_INDENT}{_INDENT}label="test_author:handoff", phase="handoff", schema=None,')
+    a(
+        f'{_INDENT}{_INDENT}label="test_author:handoff", phase="handoff", schema=None,'
+        f' options={{"model": "{review_model}"}},'
+    )
     a(f"{_INDENT})")
     a("")
     a(f'{_INDENT}return {{"cards": len(cards), "merged": merged}}')
@@ -257,7 +295,7 @@ def _prompt_body(seat: str, steps: str) -> str:
     return f"（seat={seat}）固定流程：{steps}"
 
 
-def _sequential_body(graph: PhaseGraph, seats: dict[str, list[dict[str, Any]]]) -> str:
+def _sequential_body(snap: SpecSnapshot, graph: PhaseGraph, seats: dict[str, list[dict[str, Any]]]) -> str:
     """非波次团队骨架：相位顺序推进，在场座位逐相位一次结构化调用。"""
     L: list[str] = []
     a = L.append
@@ -270,9 +308,11 @@ def _sequential_body(graph: PhaseGraph, seats: dict[str, list[dict[str, Any]]]) 
         members = seats.get(seat_list[0]) if seat_list else None
         if members:
             seat = seat_list[0]
+            model = _seat_alias(snap, members[0])
             a(
                 f'{_INDENT}out["{p}"] = await agent('
-                f'"执行 {p} 相位职责（seat={seat}）", label="{seat}", phase="{p}", schema=None)'
+                f'"执行 {p} 相位职责（seat={seat}）", label="{seat}", phase="{p}", schema=None,'
+                f' options={{"model": "{model}"}})'
             )
         else:
             a(f'{_INDENT}log("{p} 相位（机制动作/无在场实体座位）")')
@@ -294,7 +334,7 @@ def compile_team_flow(snap: SpecSnapshot, team: Entity, graph: PhaseGraph) -> st
         "SCHEMA_REVIEW = " + _dict_lit(_schema_review(), 0) + "\n"
     )
     is_wave = str(team.raw.get("topology") or "").startswith("leader-teammate")
-    body = _delivery_body(snap, team, seats) if is_wave else _sequential_body(graph, seats)
+    body = _delivery_body(snap, team, seats) if is_wave else _sequential_body(snap, graph, seats)
     return head + "\n" + meta + "\n" + schemas + "\n" + body + "\n"
 
 

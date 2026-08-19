@@ -183,6 +183,18 @@ class TestGatewayModelResolver:
         with pytest.raises(ModelResolutionError, match="未登记"):
             GatewayModelResolver(self.models).resolve("nope")
 
+    def test_none_alias_falls_back_to_default(self) -> None:
+        """回归：上游 backend 对无 hint 的 agent() 调用传 resolver(None)——
+        无 default 回退则 live 全座位崩（alias 未登记：None）。"""
+        models = dict(self.models)
+        models["default"] = dict(self.models["fast"])
+        r = GatewayModelResolver(models).resolve(None)
+        assert r.model == "gpt-4o-mini"
+
+    def test_none_alias_without_default_fails_closed(self) -> None:
+        with pytest.raises(ModelResolutionError, match="无 default"):
+            GatewayModelResolver(self.models).resolve(None)
+
     def test_missing_env_fails_closed(self) -> None:
         import os
 

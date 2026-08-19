@@ -108,6 +108,37 @@ def test_compile_schemas_are_dicts_at_runtime(reg: Path) -> None:
         assert isinstance(ns[name], dict), f"{name} 必须是 dict（set 字面量回归？）"
 
 
+def test_compile_agent_calls_carry_model_options(reg: Path) -> None:
+    """回归：agent() 调用曾不传 options.model——live 执行时上游 backend 传
+    resolver(None)，模型归因崩（alias 未登记：None）。每个 agent() 调用必须
+    携带声明解析的座位 alias（verdict worker 按 use_for=arbitration 归因）。"""
+    snap = RegistryLoader().load(reg)
+    src = compile_team_flow(snap, team=snap.teams["mini-wave"], graph=_graph(reg))
+    opt_lines = [line for line in src.splitlines() if 'options={"model"' in line]
+    assert len(opt_lines) >= 4  # plan/build(_build_one)/gate/review/handoff 全带
+    # 所有 options.model 非空且来自 models.yaml 登记
+    import re
+
+    aliases = set(re.findall(r'options=\{"model": "([^"]+)"\}', src))
+    assert aliases and aliases <= set(snap.models)
+
+
+def test_compile_sequential_carries_model_options(reg: Path) -> None:
+    """非波次骨架同样归因：在场座位 agent() 调用带 options.model。"""
+    snap = RegistryLoader().load(reg)
+    seq_teams = [
+        t
+        for t in snap.teams.values()
+        if not str(t.raw.get("topology") or "").startswith("leader-teammate")
+        and t.status in ("approved",)
+        and (t.raw.get("members") or [])
+    ]
+    if not seq_teams:
+        pytest.skip("fixture 无非波次团队")
+    src = compile_team_flow(snap, team=seq_teams[0], graph=_graph(reg))
+    assert 'options={"model"' in src
+
+
 def test_flow_outputs_skips_non_renderable(reg: Path) -> None:
     snap = RegistryLoader().load(reg)
     outs = flow_outputs(snap, _graph(reg))

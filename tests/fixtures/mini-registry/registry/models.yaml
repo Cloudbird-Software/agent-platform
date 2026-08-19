@@ -17,3 +17,10 @@ models:
     cost_tier: high
     quota_tier: standard
     use_for: [test-authoring]
+  - alias: judge-deep
+    family: sovereign-family
+    route_group: sovereign-pool
+    limits: {temperature_max: 0.2}
+    cost_tier: high
+    quota_tier: restricted
+    use_for: [arbitration]
