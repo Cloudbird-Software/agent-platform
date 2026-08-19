@@ -22,7 +22,7 @@ jobs:
     # push 用 lockfile 审计兜底（npm audit 只读 registry 元数据，无新 action 依赖）。
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,16 +30,44 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: npm audit（lockfile 高危阻断）
+      - name: 核心锁面审计（uv.lock，零容忍）
         run: |
-          # 只装 npm（runner 预装）；审计 prod+dev 依赖的 high/critical
-          npm audit --package-lock-only --audit-level=high
+          # Python 仓（ADR-0025 语言准入）：uv lock 与 pyproject 同步校验 + 全量依赖漏洞审计
+          pipx install uv
+          uv lock --check
+          uv export --all-extras --format requirements-txt --output-file /tmp/req.txt --no-hashes
+          pipx install pip-audit
+          pip-audit --requirement /tmp/req.txt --skip-editable
+      - name: 运行时锁面审计（runtime/requirements.lock，显式风险准入）
+        run: |
+          # 运行时树（openjiuwen/jiuwenswarm 传递依赖）与核心锁面分离（ADR-0025）：
+          # 上游钉死/未发修复版的漏洞在此面登记为准入项——准入清单即审计对象，
+          # 新出现的未登记漏洞仍然 fail-closed。每项准入须给出不可修理由：
+          #   PYSEC-2026-311   chromadb 1.5.9  预认证代码注入——修复版未发布
+          #                    （last_affected=1.5.9）；部署面仅进程内/loopback 使用，
+          #                    Docker 网络面隔离；上游 jiuwenswarm==0.2.3 引入。
+          #   PYSEC-2026-2447  diskcache 5.6.3 pickle 反序列化——本地向量 + 需 UI
+          #                    交互（AV:L/UI:A），修复版未发布；py-key-value-aio 引入。
+          #   PYSEC-2026-2475  fastmcp 命令注入（Gemini CLI 集成路径）——修复在 3.2.0，
+          #                    openjiuwen==0.1.16 钉 fastmcp<3.0；本运行时不使用该路径。
+          #   PYSEC-2026-2476  fastmcp OAuth proxy 缺失 consent 校验——同上钉死；
+          #                    本运行时不启用 OAuth proxy。
+          #   PYSEC-2026-1835  pypdf2 DoS（注释后无字符死循环）——pypdf2 已停更，
+          #                    修复在继任者 pypdf 3.9.0；skillnet-ai 硬依赖 pypdf2，
+          #                    仅文档解析面、影响可用性不影响机密性。
+          pipx install pip-audit
+          pip-audit --requirement runtime/requirements.lock --skip-editable \
+            --ignore-vuln PYSEC-2026-311 \
+            --ignore-vuln PYSEC-2026-2447 \
+            --ignore-vuln PYSEC-2026-2475 \
+            --ignore-vuln PYSEC-2026-2476 \
+            --ignore-vuln PYSEC-2026-1835
 
   check:
     uses: Cloudbird-Software/CI-Workflows/.github/workflows/check.yml@v1
     with:
-      runtime: node
-      node-version: "24"
+      runtime: python
+      python-version: "3.12"
 
   deps:
     if: github.event_name == 'pull_request'
