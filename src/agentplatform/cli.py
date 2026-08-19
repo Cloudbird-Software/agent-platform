@@ -56,6 +56,16 @@ def _cmd_spec_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_render(args: argparse.Namespace) -> int:
+    from agentplatform.render import Renderer
+    from agentplatform.spec import RegistryLoader
+
+    snap = RegistryLoader().load(args.registry)
+    manifest = Renderer().render(snap, args.out)
+    print(manifest.to_json())
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ap", description="agent-platform 控制台")
     sub = parser.add_subparsers(dest="command")
@@ -74,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("--registry", required=True, help="agent-registry checkout 路径")
     p_show.add_argument("entity", nargs="?", help="实体引用，如 agent:reviewer")
     p_show.set_defaults(func=_cmd_spec_show)
+
+    p_render = sub.add_parser("render", help="渲染声明 → jiuwenswarm workspace")
+    p_render.add_argument("--registry", required=True, help="agent-registry checkout 路径")
+    p_render.add_argument("--out", required=True, help="输出目录（如 ~/.agentplatform/workspace）")
+    p_render.set_defaults(func=_cmd_render)
 
     return parser
 
