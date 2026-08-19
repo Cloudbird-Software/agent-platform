@@ -132,12 +132,12 @@ def _merge_verdict_src() -> str:
         '    """确定性判卷（机制原型——无 LLM 决定权）。\n\n'
         "    merge_policy 声明：gate.pass AND (review.approve OR review.waived)。\n"
         '    """\n'
-        '    if gate is None or review is None:\n'
+        "    if gate is None or review is None:\n"
         '        return {"ok": False, "changes_requested": True, "reason": "worker 输出缺失"}\n'
-        "    checks = gate.get(\"checks\") or []\n"
-        "    gate_pass = bool(checks) and all(c.get(\"passed\") for c in checks)\n"
+        '    checks = gate.get("checks") or []\n'
+        '    gate_pass = bool(checks) and all(c.get("passed") for c in checks)\n'
         '    decision = review.get("decision")\n'
-        '    return {\n'
+        "    return {\n"
         '        "ok": gate_pass and decision in ("approve", "waived"),\n'
         '        "changes_requested": decision == "changes_requested",\n'
         '        "gate_pass": gate_pass,\n'
@@ -191,22 +191,22 @@ def _delivery_body(snap: SpecSnapshot, team: Entity, seats: dict[str, list[dict[
     a(_merge_verdict_src())
     a("")
     a("async def _build_one(card):")
-    a(f'{_INDENT}from swarmflow import agent')
-    a(f'{_INDENT}return await agent(')
+    a(f"{_INDENT}from swarmflow import agent")
+    a(f"{_INDENT}return await agent(")
     a(f'{_INDENT}{_INDENT}f\'{{BUILD_PROMPT}}\\n卡：{{card["id"]}} {{card["goal"]}}\',')
-    a('{i}{i}label=f\'builder:{{card["id"]}}\', phase="build", schema=None,'.replace('{i}', _INDENT * 2))
-    a(f'{_INDENT})')
+    a('{i}{i}label=f\'builder:{{card["id"]}}\', phase="build", schema=None,'.replace("{i}", _INDENT * 2))
+    a(f"{_INDENT})")
     a("")
     a("async def run(args):")
-    a(f'{_INDENT}from swarmflow import agent, budget, log, map_parallel, parallel, phase')
+    a(f"{_INDENT}from swarmflow import agent, budget, log, map_parallel, parallel, phase")
     a("")
-    a(f'{_INDENT}# ---- plan：planner 产波次计划（cards 结构化输出）----')
+    a(f"{_INDENT}# ---- plan：planner 产波次计划（cards 结构化输出）----")
     a(f'{_INDENT}phase("plan")')
     a(f'{_INDENT}plan = await agent(PLAN_PROMPT, label="planner", phase="plan", schema=SCHEMA_WAVE_PLAN)')
     a(f'{_INDENT}cards = (plan or {{}}).get("cards", [])')
     a(f'{_INDENT}log(f"波次计划：{{len(cards)}} 卡")')
     a("")
-    a(f'{_INDENT}# ---- build ⇄ verify：返工回路（changes_requested 回边；retries 上限防振荡）----')
+    a(f"{_INDENT}# ---- build ⇄ verify：返工回路（changes_requested 回边；retries 上限防振荡）----")
     a(f'{_INDENT}verdict = {{"ok": False, "changes_requested": True}}')
     a(f"{_INDENT}attempt = 0")
     a(f"{_INDENT}while attempt < {MAX_RETRIES}:")
@@ -230,17 +230,17 @@ def _delivery_body(snap: SpecSnapshot, team: Entity, seats: dict[str, list[dict[
     a(f'{_INDENT}{_INDENT}if not verdict["changes_requested"]:')
     a(f"{_INDENT}{_INDENT}{_INDENT}attempt += 1  # gate 失败也计入重试（retries.exhausted → 回炉）")
     a("")
-    a(f'{_INDENT}# ---- integrate：merge/release 均为机制动作（无 agent 持合并权）----')
+    a(f"{_INDENT}# ---- integrate：merge/release 均为机制动作（无 agent 持合并权）----")
     a(f'{_INDENT}phase("integrate")')
     a(f'{_INDENT}merged = verdict.get("ok", False)')
     a(f'{_INDENT}log(f"合并判定：{{merged}}（gate.pass AND (review.approve OR review.waived)）")')
     a("")
-    a(f'{_INDENT}# ---- handoff：交接（test_author 在场——retro/memory-export）----')
+    a(f"{_INDENT}# ---- handoff：交接（test_author 在场——retro/memory-export）----")
     a(f'{_INDENT}phase("handoff")')
-    a(f'{_INDENT}await agent(')
+    a(f"{_INDENT}await agent(")
     a(f'{_INDENT}{_INDENT}"产 retrospective 与 memory_digest 导出（交接相位唯一在场座位）",')
     a(f'{_INDENT}{_INDENT}label="test_author:handoff", phase="handoff", schema=None,')
-    a(f'{_INDENT})')
+    a(f"{_INDENT})")
     a("")
     a(f'{_INDENT}return {{"cards": len(cards), "merged": merged}}')
     return "\n".join(L)
@@ -261,7 +261,7 @@ def _sequential_body(graph: PhaseGraph, seats: dict[str, list[dict[str, Any]]]) 
     L: list[str] = []
     a = L.append
     a("async def run(args):")
-    a(f'{_INDENT}from swarmflow import agent, log, phase')
+    a(f"{_INDENT}from swarmflow import agent, log, phase")
     a(f"{_INDENT}out = {{}}")
     for p in graph.phases:
         a(f'{_INDENT}phase("{p}")')
@@ -287,15 +287,9 @@ def compile_team_flow(snap: SpecSnapshot, team: Entity, graph: PhaseGraph) -> st
     head = _head(team, snap, graph)
     meta = _meta(team, snap, graph)
     schemas = (
-        "SCHEMA_WAVE_PLAN = {\n"
-        + _dict_lit(_schema_cards(), 0)
-        + "\n}\n"
-        "SCHEMA_GATE = {\n"
-        + _dict_lit(_schema_gate(), 0)
-        + "\n}\n"
-        "SCHEMA_REVIEW = {\n"
-        + _dict_lit(_schema_review(), 0)
-        + "\n}\n"
+        "SCHEMA_WAVE_PLAN = {\n" + _dict_lit(_schema_cards(), 0) + "\n}\n"
+        "SCHEMA_GATE = {\n" + _dict_lit(_schema_gate(), 0) + "\n}\n"
+        "SCHEMA_REVIEW = {\n" + _dict_lit(_schema_review(), 0) + "\n}\n"
     )
     is_wave = str(team.raw.get("topology") or "").startswith("leader-teammate")
     body = _delivery_body(snap, team, seats) if is_wave else _sequential_body(graph, seats)

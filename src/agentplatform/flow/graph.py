@@ -206,9 +206,7 @@ def validate_graph(g: PhaseGraph) -> list[ValidationIssue]:
         if p == terminal:
             continue
         if not g.own_out_edges(p):
-            issues.append(
-                ValidationIssue("G3", f"相位 {p} 无专属出边（any 通配边不计——恒真边不能消除死锁）")
-            )
+            issues.append(ValidationIssue("G3", f"相位 {p} 无专属出边（any 通配边不计——恒真边不能消除死锁）"))
 
     # G5：可达性
     reached = g.reachable()
@@ -220,7 +218,5 @@ def validate_graph(g: PhaseGraph) -> list[ValidationIssue]:
     for e in g.edges:
         for tok in events_in_when(e.when):
             if tok not in g.producers:
-                issues.append(
-                    ValidationIssue("G6", f"边 {e.src}→{e.dst} 的 when 引用事件 {tok!r} 无生产者")
-                )
+                issues.append(ValidationIssue("G6", f"边 {e.src}→{e.dst} 的 when 引用事件 {tok!r} 无生产者"))
     return issues

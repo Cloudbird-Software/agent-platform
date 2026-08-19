@@ -39,6 +39,7 @@ def _rules(issues) -> set[str]:
 
 # ---- A1 图破坏 ----
 
+
 def test_a1_missing_own_exit_edge_detected(tmp_path: Path) -> None:
     reg = _reg(tmp_path)
 
@@ -57,9 +58,7 @@ def test_a1_wildcard_edge_does_not_satisfy_g3(tmp_path: Path) -> None:
 
     def only_wildcard(m):
         # verify 的专属出边全部拿掉，只剩 any 通配出边——恒真边不能消除死锁
-        m["flow"]["phases"]["graph"] = [
-            e for e in m["flow"]["phases"]["graph"] if e["from"] != "verify"
-        ] + [
+        m["flow"]["phases"]["graph"] = [e for e in m["flow"]["phases"]["graph"] if e["from"] != "verify"] + [
             {"from": "any", "to": "integrate", "when": "reverted"},  # 保可达（any 通配）
             {"from": "integrate", "to": "handoff", "when": "reverted"},  # integrate 保专属出边
         ]
@@ -116,13 +115,13 @@ def test_a5_structural_fail_closed(tmp_path: Path) -> None:
 
 # ---- A6 坏脚本 lint ----
 
-_GOOD = '''\
+_GOOD = """\
 META = {"name": "t", "phases": ["p"]}
 async def run(args):
     from swarmflow import agent, phase
     phase("p")
     await agent("hi", label="a", phase="p")
-'''
+"""
 
 
 def test_a6_lint_passes_good() -> None:
@@ -172,6 +171,7 @@ def test_a6_import_outside_swarmflow() -> None:
 
 
 # ---- A7 编译产物指纹敏感性（漂移检测的伏笔） ----
+
 
 def test_a7_compiled_digest_tracks_spec(tmp_path: Path) -> None:
     from agentplatform.spec.fingerprint import sha256_hex

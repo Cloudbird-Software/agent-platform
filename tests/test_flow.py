@@ -34,6 +34,7 @@ def _graph(reg: Path):
 
 # ---- graph ----
 
+
 def test_load_phase_graph_structure(reg: Path) -> None:
     g = _graph(reg)
     assert g.phases == ("plan", "build", "verify", "integrate", "handoff")
@@ -60,6 +61,7 @@ def test_events_in_when_extraction() -> None:
 
 
 # ---- codegen ----
+
 
 def test_compile_team_flow_deterministic(reg: Path) -> None:
     snap = RegistryLoader().load(reg)
@@ -111,6 +113,7 @@ def test_compiled_workflow_lint_clean(reg: Path) -> None:
 
 # ---- dry-run ----
 
+
 def test_dryrun_registry_clean(reg: Path) -> None:
     from agentplatform.flow import dryrun_registry
 
@@ -120,6 +123,7 @@ def test_dryrun_registry_clean(reg: Path) -> None:
 
 
 # ---- 真实 registry 冒烟 ----
+
 
 @pytest.mark.skipif(not (REAL_REGISTRY / "registry").is_dir(), reason="真实 registry 不在预期路径")
 def test_real_registry_end_to_end() -> None:

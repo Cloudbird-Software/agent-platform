@@ -38,9 +38,7 @@ ALLOWED_OPERATORS = frozenset(
     }
 )
 
-DANGEROUS_NAMES = frozenset(
-    {"eval", "exec", "open", "__import__", "compile", "globals", "locals", "vars"}
-)
+DANGEROUS_NAMES = frozenset({"eval", "exec", "open", "__import__", "compile", "globals", "locals", "vars"})
 DANGEROUS_MODULES = frozenset(
     {"os", "sys", "subprocess", "shutil", "pathlib", "socket", "requests", "urllib", "http", "importlib"}
 )
@@ -98,11 +96,7 @@ def lint_workflow_source(source: str) -> list[str]:
 
     # D3 危险调用（遍历全部）
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id in DANGEROUS_NAMES
-        ):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in DANGEROUS_NAMES:
             issues.append(f"D3 危险调用：{node.func.id}()")
         if (
             isinstance(node, ast.Attribute)
