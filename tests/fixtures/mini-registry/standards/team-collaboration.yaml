@@ -1,0 +1,22 @@
+# mini 夹具：flow/ 编译器测试用相位图（真实真源在 agent-registry
+# standards/team-collaboration.yaml#flow——结构同型，规模最小）
+flow:
+  phases:
+    phase_order: [plan, build, verify, integrate, handoff]
+    graph:
+      - {from: plan, to: build, when: "cards.ratified AND planner.state == exited"}
+      - {from: build, to: verify, when: pr.opened}
+      - {from: verify, to: build, when: review.changes_requested}
+      - {from: verify, to: integrate, when: "gate.pass AND (review.approve OR review.waived)"}
+      - {from: any, to: plan, when: amendment.normative.accepted}
+      - {from: integrate, to: handoff, when: "released_behind_flag OR reverted OR no_release_face(wave)"}
+  event_producers:
+    cards.ratified: mechanism:card-gate
+    pr.opened: platform
+    gate.pass: mechanism:verifier
+    review.approve: seat:test_author
+    review.changes_requested: seat:test_author
+    review.waived: mechanism:card-gate
+    amendment.normative.accepted: owner
+    released_behind_flag: mechanism:release-bot
+    reverted: mechanism:release-bot

@@ -66,6 +66,52 @@ def _cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_flow_check(args: argparse.Namespace) -> int:
+    from agentplatform.flow import load_phase_graph, validate_graph
+
+    graph = load_phase_graph(args.registry)
+    issues = validate_graph(graph)
+    print(
+        json.dumps(
+            {
+                "phase_graph_digest": graph.digest,
+                "phases": list(graph.phases),
+                "edges": len(graph.edges),
+                "producers": len(graph.producers),
+                "issues": [f"{i.rule}: {i.message}" for i in issues],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 1 if issues else 0
+
+
+def _cmd_flow_compile(args: argparse.Namespace) -> int:
+    from agentplatform.flow import flow_outputs, load_phase_graph
+    from agentplatform.spec import RegistryLoader
+
+    snap = RegistryLoader().load(args.registry)
+    graph = load_phase_graph(args.registry)
+    outs = flow_outputs(snap, graph)
+    out = __import__("pathlib").Path(args.out)
+    for rel, text in sorted(outs.items()):
+        target = out / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    print(json.dumps({"compiled": sorted(outs), "spec_digest": snap.digest}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_flow_dryrun(args: argparse.Namespace) -> int:
+    from agentplatform.flow import dryrun_registry
+
+    report = dryrun_registry(args.registry)
+    ok = not report["graph_issues"] and not any(report["teams"].values())  # type: ignore[arg-type]
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ap", description="agent-platform 控制台")
     sub = parser.add_subparsers(dest="command")
@@ -89,6 +135,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument("--registry", required=True, help="agent-registry checkout 路径")
     p_render.add_argument("--out", required=True, help="输出目录（如 ~/.agentplatform/workspace）")
     p_render.set_defaults(func=_cmd_render)
+
+    p_flow = sub.add_parser("flow", help="相位图校验/SwarmFlow 编译/dry-run")
+    flow_sub = p_flow.add_subparsers(dest="flow_command", required=True)
+    p_chk = flow_sub.add_parser("check", help="声明相位图验证（死锁/可达/悬空事件）")
+    p_chk.add_argument("--registry", required=True)
+    p_chk.set_defaults(func=_cmd_flow_check)
+    p_cmp = flow_sub.add_parser("compile", help="编译声明 → SwarmFlow 脚本")
+    p_cmp.add_argument("--registry", required=True)
+    p_cmp.add_argument("--out", required=True, help="输出目录（swarmflow/<team>.py）")
+    p_cmp.set_defaults(func=_cmd_flow_compile)
+    p_dry = flow_sub.add_parser("dryrun", help="全链路静态演练（图+编译+lint）")
+    p_dry.add_argument("--registry", required=True)
+    p_dry.set_defaults(func=_cmd_flow_dryrun)
 
     return parser
 
