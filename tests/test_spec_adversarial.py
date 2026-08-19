@@ -152,3 +152,24 @@ def test_a8_fingerprint_determinism(reg: Path) -> None:
     p.write_text(p.read_text(encoding="utf-8") + "\nx-extra: 1\n", encoding="utf-8")
     d = RegistryLoader().load(dst2)
     assert d.digest != b.digest  # 语义变更 → 必变
+
+
+def test_a9_standing_team_active_is_renderable(reg: Path) -> None:
+    """常驻队（status: active，如 stewardship）必须参与完整性校验——
+    悬空成员引用在 active 状态下同样 fail-closed（不是只查 approved）。"""
+    p = reg / "registry" / "teams" / "standing.yaml"
+    p.write_text(
+        "id: standing\nversion: 1.0.0\nstatus: active\narchetype: delivery_squad\n"
+        "members:\n- agent: agent:ghost\n  seat: x\n  count: 1\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SpecError) as ei:
+        RegistryLoader().load(reg)
+    assert ei.value.kind == "reference"
+    p.write_text(
+        "id: standing\nversion: 1.0.0\nstatus: active\narchetype: delivery_squad\n"
+        "members:\n- agent: agent:mini-builder\n  seat: builder\n  count: 1\n",
+        encoding="utf-8",
+    )
+    snap = RegistryLoader().load(reg)
+    assert snap.teams["standing"].status == "active"

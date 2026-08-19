@@ -28,6 +28,19 @@ from agentplatform.spec.fingerprint import content_digest, digest_of_files, file
 
 ENV_REF = re.compile(r"^env:[A-Z_][A-Z0-9_]*$")
 
+
+def _norm_resource(ref: str) -> str:
+    """真实 registry 的 prompt_ref/schema_ref/steps_ref 相对 registry/ 目录；
+    也接受相对根的完整路径（两种写法归一）。"""
+    if ref.startswith("registry/"):
+        return ref
+    return f"registry/{ref}"
+
+
+# 可进入渲染/完整性校验的团队状态：approved（一次性波次队）+ active（常驻队，
+# 如 stewardship——常驻是合法生命周期，不是草稿）。
+TEAM_RENDERABLE = {"approved", "active"}
+
 # 明文密钥特征（对抗测试逐条覆盖；误报保守优先——宁可 CI 红）。
 LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("github-token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b")),
@@ -288,7 +301,7 @@ class RegistryLoader:
             if agent.status == "approved":
                 self._check_agent_refs(agent, snap, src)
         for team in snap.teams.values():
-            if team.status != "approved":
+            if team.status not in TEAM_RENDERABLE:
                 continue
             src = f"team:{team.id}"
             members = team.raw.get("members") or []
@@ -298,9 +311,9 @@ class RegistryLoader:
                 if not isinstance(m, dict):
                     raise shape(team.rel_path, "member 项必须是映射")
                 snap.approved_agent(m.get("agent", ""), src)
-            arch = team.raw.get("archetype")
-            if isinstance(arch, str) and arch not in snap.profiles:
-                raise reference(src, arch, "archetype profile")
+            # 注意：team 的 archetype（delivery_squad 等）是 team-collaboration.yaml
+            # 里的组织级标签，不在 archetype-profiles（后者只定义 agent 原型）——
+            # registry validate.py 亦不做此比对，此处不重复（声明的真源在 standards 侧）。
 
     def _check_agent_refs(self, agent: Entity, snap: SpecSnapshot, src: str) -> None:
         raw = agent.raw
@@ -316,13 +329,13 @@ class RegistryLoader:
         ident = raw.get("identity") or {}
         prompt_ref = ident.get("prompt_ref")
         if isinstance(prompt_ref, str) and prompt_ref:
-            snap.require_resource(prompt_ref, src)
+            snap.require_resource(_norm_resource(prompt_ref), src)
         # io_contract schemas
         io = raw.get("io_contract") or {}
         for side in ("input", "output"):
             ref = (io.get(side) or {}).get("schema_ref")
             if isinstance(ref, str) and ref:
-                snap.require_resource(ref, src)
+                snap.require_resource(_norm_resource(ref), src)
         # 工具/技能引用
         caps = raw.get("capabilities") or {}
         for ref in caps.get("tools") or []:
@@ -335,7 +348,7 @@ class RegistryLoader:
         if wf.get("mode") == "fixed":
             steps_ref = wf.get("steps_ref")
             if isinstance(steps_ref, str) and steps_ref:
-                snap.require_resource(steps_ref, src)
+                snap.require_resource(_norm_resource(steps_ref), src)
 
         # env 引用形状（软面：只校验已知 env 字段的形状）
         _check_env_shape(agent)
