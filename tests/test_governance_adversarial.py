@@ -75,16 +75,15 @@ def test_a1_payload_tamper_detected() -> None:
 
 def test_a1_event_removal_detected() -> None:
     events = _chain().events()
-    holed = EventLedger([events[0], events[2], events[3]])  # 挖掉 seq=1
+    # 挖掉 seq=1——构造即 fail-closed（比 verify 更早暴露）
     with pytest.raises(LedgerIntegrityError):
-        holed.verify()
+        EventLedger([events[0], events[2], events[3]])
 
 
 def test_a1_event_reorder_detected() -> None:
     events = _chain().events()
-    swapped = EventLedger([events[0], events[2], events[1], events[3]])
     with pytest.raises(LedgerIntegrityError):
-        swapped.verify()
+        EventLedger([events[0], events[2], events[1], events[3]])
 
 
 def test_a1_corrupt_jsonl_line(tmp_path) -> None:
