@@ -13,6 +13,9 @@ topology: leader-teammate
 workspace:
   shared:
     root: env:TEAM_WORKSPACE_ROOT
+storage:
+  type: sqlite
+  ref: env:TEAM_DB_DSN
 budget:
   team_envelope:
     usd: env:TEAM_USD_CAP

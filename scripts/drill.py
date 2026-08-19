@@ -63,17 +63,21 @@ def main() -> int:
         assert summary["flows"], "渲染产物必须含 flow 脚本"
         step(f"init（{summary['files']} 文件，digest {summary['spec_digest'][:8]}）")
 
-        # 2. 填 .env（演练用假凭据——真实值由用户填）
+        # 2. 真实用户路径：cp 模板 → 只填必填项（非敏感项已预填本地默认）
         env_example = (ws / ".env.example").read_text(encoding="utf-8")
         (ws / ".env").write_text(
             "\n".join(
-                line + "drill-fake"
+                line + "drill-fake" if line.endswith("=") and not line.startswith("#") else line
                 for line in env_example.splitlines()
-                if line and not line.startswith("#") and line.endswith("=")
             ),
             encoding="utf-8",
         )
-        step("填 .env（假凭据）")
+        must_fill = [
+            ln.split("=", 1)[0]
+            for ln in env_example.splitlines()
+            if ln.endswith("=") and not ln.startswith("#")
+        ]
+        step(f"cp .env.example .env + 只填必填 {must_fill}（其余预填默认）")
 
         # 3. doctor 全绿（runtime 面允许 warn——零上游环境）
         doc = json.loads(ap("doctor", "--registry", str(REGISTRY), "--workspace", str(ws), "--json").stdout)

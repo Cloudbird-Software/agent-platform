@@ -50,7 +50,9 @@ workspace:
     decisions: decisions/
     contracts: contracts/
 storage:
-  type: postgresql
+  # openjiuwen/jiuwenswarm 原生本地姿态：sqlite 零基础设施开箱（ADR-0025 落地适配）。
+  # ref 为 sqlite 库文件路径（相对 → agent_teams_home 下）；生产升 PG 走新 ADR 整体切换。
+  type: sqlite
   ref: env:TEAM_DB_DSN
 budget:
   team_envelope:

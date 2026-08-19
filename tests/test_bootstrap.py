@@ -69,7 +69,39 @@ class TestEnvfile:
 
         for var in load_manifest(ws).env_refs:
             assert f"{var}=" in text
-        assert "sk-" not in text and "password" not in text.lower(), "模板永不带值"
+        assert "sk-" not in text and "password" not in text.lower(), "凭据永不带值"
+
+    def test_envfile_prefills_local_defaults_not_credentials(self, tmp_path: Path) -> None:
+        """开箱语义：凭据留空必填；非敏感基础设施变量预填本地默认。"""
+        from agentplatform.bootstrap.envfile import default_for
+
+        ws = tmp_path / "ws"
+        init_workspace(FIXTURE, ws)
+        text = render_envfile(ws)
+        assert "LLM_GATEWAY_KEY=\n" in text and "LLM_GATEWAY_ENDPOINT=\n" in text
+        assert "TEAM_WORKSPACE_ROOT=data/team-ws\n" in text
+        assert "TEAM_DB_DSN=data/team.db\n" in text
+        assert default_for("LLM_GATEWAY_KEY") is None
+        assert default_for("SOME_UNKNOWN_TOKEN") is None, "未知变量不猜默认（fail-closed）"
+
+    def test_out_of_box_doctor_green_with_only_gateway_filled(self, tmp_path: Path) -> None:
+        """终验核心路径：cp 模板 → 只填网关两项 → doctor 全绿（ADR-0025 开箱承诺）。"""
+        import shutil
+
+        ws = tmp_path / "ws"
+        init_workspace(FIXTURE, ws)
+        shutil.copy(ws / ".env.example", ws / ".env")
+        env = (ws / ".env").read_text(encoding="utf-8")
+        (ws / ".env").write_text(
+            env.replace("LLM_GATEWAY_ENDPOINT=", "LLM_GATEWAY_ENDPOINT=http://gw.invalid:4000").replace(
+                "LLM_GATEWAY_KEY=", "LLM_GATEWAY_KEY=fake"
+            ),
+            encoding="utf-8",
+        )
+        result = run_doctor(registry=FIXTURE, workspace=ws, human=False)
+        by = {c["name"]: c["status"] for c in result["checks"]}
+        assert by["env"] == "pass", f"只填网关两项即应全绿：{result['checks']}"
+        assert result["ok"] is True
 
 
 # ── doctor ────────────────────────────────────────────────────────────
