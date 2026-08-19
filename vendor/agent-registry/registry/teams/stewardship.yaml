@@ -42,8 +42,9 @@ workspace:
     findings: findings/
     backlog: backlog/
 storage:
-  type: postgresql
-  ref: env:GOVERNANCE_DB_DSN        # 与 ephemeral 队分离（各队独占 DSN——销毁语义清晰，资产不随队丢失）
+  # sqlite 本地姿态（ADR-0025 开箱适配）；与 ephemeral 队分离（各队独占库文件——销毁语义清晰，资产不随队丢失）
+  type: sqlite
+  ref: env:GOVERNANCE_DB_DSN
 lifecycle:
   type: persistent
   destroy_policy: manual

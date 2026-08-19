@@ -41,7 +41,8 @@ workspace:
     artifacts: artifacts/
     decisions: decisions/
 storage:
-  type: postgresql
+  # sqlite 本地姿态（ADR-0025 开箱适配）；ephemeral 队销毁时库文件随 workspace 回收
+  type: sqlite
   ref: env:INCIDENT_DB_DSN
 budget:
   team_envelope:

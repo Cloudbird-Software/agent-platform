@@ -1,5 +1,5 @@
 source_repo: Cloudbird-Software/agent-registry
-source_commit: 80ae72403471448a0c080cf6b404855812660881
-spec_digest: 15cb81f7b481915199af88209519ed8a47d9c0a1e5f05c67ffca5e6f7f7e1fac
-generated_at: '2026-08-19T18:05:36+00:00'
+source_commit: 8da7a897ab702972705c5ac1889bb8ea16eecf10
+spec_digest: e87c13886c8c6054b8f4edc007955af567ed3f48f4c5349be88f2e5012ac1c5e
+generated_at: '2026-08-19T19:38:01+00:00'
 tool: scripts/vendor_registry.py
