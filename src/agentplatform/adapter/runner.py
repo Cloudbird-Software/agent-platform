@@ -23,6 +23,23 @@ class RunnerError(Exception):
     """装配失败（workspace 未渲染/脚本缺失/上游不可用）。"""
 
 
+def verify_rendered_files(ws: Path) -> None:
+    """执行前完整性：manifest 账本里每个文件在磁盘的哈希必须一致。
+
+    manifest 自校验只防账本本身被改；本面防"账本完好但产物被换"——
+    被篡改的 flow 脚本/模型表绝不能进入执行（ADR-0025 对抗面 T3）。
+    """
+    from agentplatform.spec.fingerprint import sha256_hex
+
+    m = load_manifest(ws)
+    for rel, expect in sorted(m.files.items()):
+        p = ws / rel
+        if not p.is_file():
+            raise RunnerError(f"渲染产物缺失：{rel}（重渲染：ap init）")
+        if sha256_hex(p.read_text(encoding="utf-8")) != expect:
+            raise RunnerError(f"渲染产物被篡改：{rel}（磁盘与 manifest 不一致——重渲染或查 drift）")
+
+
 def _load_models_config(workspace: Path) -> dict[str, dict]:
     """workspace/models.json → resolver 注册表（渲染面机器可读模型表）。"""
     from agentplatform.adapter.modelresolver import load_models_registry
@@ -61,7 +78,7 @@ async def run_team_flow(
         raise RunnerError(f"上游运行时不可用：{e}（安装 runtime/requirements.lock 到执行环境）") from e
 
     ws = Path(workspace)
-    load_manifest(ws)  # 完整性：manifest 自校验（渲染面可信才执行）
+    verify_rendered_files(ws)  # 完整性：账本自校验 + 逐文件磁盘哈希（防产物被换）
     script = resolve_flow_script(ws, team_id)
 
     store = RuntimeStore.open(state_dir)

@@ -11,6 +11,7 @@
   预算    budget-spend / budget-tick
   锁      lock-acquire / lock-release / lock-freeze
   账本    ledger-export
+  执行面  flow-teams / flow-dryrun / flow-up / doctor（bootstrap 委托）
 """
 
 from __future__ import annotations
@@ -219,6 +220,56 @@ def _ledger_export(store: RuntimeStore, a: argparse.Namespace) -> int:
     return _ok({"jsonl": text, "events": len(store.ledger.events())})
 
 
+# ── 执行面委托（bootstrap 面——外部 agent 的单一控制面）──────────────
+
+
+def _flow_teams(_store: RuntimeStore, a: argparse.Namespace) -> int:
+    from agentplatform.render.manifest import load_manifest
+
+    ws = Path(a.workspace)
+    try:
+        m = load_manifest(ws)
+    except (FileNotFoundError, ValueError) as e:
+        return _fail(f"workspace 未就绪：{e}", 2)
+    teams = sorted(p.stem for p in (ws / "swarmflow").glob("*.py"))
+    return _ok({"workspace": str(ws), "spec_digest": m.spec_digest[:16], "teams": teams})
+
+
+def _run_flow(live: bool):
+    def _handler(_store: RuntimeStore, a: argparse.Namespace) -> int:
+        from agentplatform.bootstrap import UpError, run_up
+
+        try:
+            # state 固定 <workspace>/state（init 的规范位置）；治理动词才用 ctl --state
+            summary = run_up(
+                a.workspace,
+                a.team,
+                state=None,
+                dry_run=not live,
+                model=a.model,
+                args_json=getattr(a, "args_json", None),
+            )
+        except UpError as e:
+            return _fail(str(e))
+        except ImportError as e:
+            return _fail(f"上游运行时不可用：{e}（make setup-runtime）")
+        except Exception as e:
+            return _fail(f"{type(e).__name__}: {e}")
+        ok = summary.get("ok", True)
+        print(json.dumps({"ok": bool(ok), **summary}, ensure_ascii=False, default=str))
+        return 0 if ok else 1
+
+    return _handler
+
+
+def _doctor(_store: RuntimeStore, a: argparse.Namespace) -> int:
+    from agentplatform.bootstrap import run_doctor
+
+    result = run_doctor(registry=a.registry, workspace=a.workspace, human=False)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result["ok"] else 1
+
+
 # ── 分发 ──────────────────────────────────────────────────────────────
 
 # verb → (handler, argparse flags)；flags 元素 = (name, kwargs)
@@ -282,7 +333,36 @@ _HANDLERS: dict[str, tuple[Any, list[tuple[str, dict]]]] = {
     ),
     "lock-freeze": (_lock_freeze, [("artifact", {"help": "制品路径"})]),
     "ledger-export": (_ledger_export, [("--path", {"dest": "path", "default": None})]),
+    # 执行面（bootstrap 委托）：外部 agent 从这里发起/预检团队流与全清单自检
+    "flow-teams": (_flow_teams, [("workspace", {"help": "workspace 目录"})]),
+    "flow-dryrun": (
+        _run_flow(live=False),
+        [
+            ("workspace", {"help": "workspace 目录"}),
+            ("team", {"help": "团队 id"}),
+            ("--model", {"default": None, "help": "默认模型 alias"}),
+        ],
+    ),
+    "flow-up": (
+        _run_flow(live=True),
+        [
+            ("workspace", {"help": "workspace 目录"}),
+            ("team", {"help": "团队 id"}),
+            ("--model", {"default": None, "help": "默认模型 alias"}),
+            ("--args-json", {"dest": "args_json", "default": None, "help": "run(args) JSON"}),
+        ],
+    ),
+    "doctor": (
+        _doctor,
+        [
+            ("--workspace", {"default": None}),
+            ("--registry", {"default": None}),
+        ],
+    ),
 }
+
+# 不开账本即可执行的动词（bootstrap 委托——workspace 未 init 也能自检）
+_NO_STORE = frozenset({"flow-teams", "flow-dryrun", "flow-up", "doctor"})
 
 
 def dispatch(argv: list[str], state_dir: str | Path) -> int:
@@ -303,6 +383,8 @@ def dispatch(argv: list[str], state_dir: str | Path) -> int:
         args = p.parse_args(rest)
     except SystemExit as e:
         return int(e.code or 2)
+    if verb in _NO_STORE:
+        return handler(None, args)  # type: ignore[arg-type] — 执行面动词不开账本
     try:
         store = RuntimeStore.open(args.state)
     except StoreError as e:

@@ -193,6 +193,33 @@ class TestAgentCtl:
         out = json.loads(capsys.readouterr().out)
         assert rc == 0 and "card-pause" in out["verbs"] and "budget-spend" in out["verbs"]
 
+    def test_exec_verbs_no_store_needed(self, tmp_path: Path, capsys) -> None:
+        """执行面动词不开账本——workspace 未 init 也能 doctor（前置诊断）。"""
+        rc = dispatch(["doctor"], tmp_path / "no-state")
+        body = json.loads(capsys.readouterr().out)
+        assert rc == 0 and body["ok"] is True  # warn 不阻断
+
+    def test_flow_verbs_via_ctl(self, tmp_path: Path, capsys) -> None:
+        from agentplatform.bootstrap import init_workspace
+        from agentplatform.render.manifest import load_manifest
+
+        ws = tmp_path / "ws"
+        init_workspace(Path(__file__).parent / "fixtures" / "mini-registry", ws)
+        (ws / ".env").write_text("\n".join(f"{v}=x" for v in load_manifest(ws).env_refs), encoding="utf-8")
+        d = str(ws / "state")
+        rc = dispatch(["flow-teams", str(ws), "--state", d], d)
+        body = json.loads(capsys.readouterr().out)
+        assert rc == 0 and body["teams"] and body["spec_digest"]
+        team = body["teams"][0]
+        rc = dispatch(["flow-dryrun", str(ws), team, "--state", d], d)
+        body = json.loads(capsys.readouterr().out)
+        assert rc == 0 and body["mode"] == "dry-run" and body["ok"] is True
+
+    def test_flow_dryrun_traversal_via_ctl(self, tmp_path: Path, capsys) -> None:
+        rc = dispatch(["flow-dryrun", str(tmp_path), "../evil", "--state", str(tmp_path)], str(tmp_path))
+        body = json.loads(capsys.readouterr().out)
+        assert rc == 1 and "非法 team" in body["error"]
+
     def test_unknown_verb(self, tmp_path: Path, capsys) -> None:
         rc = dispatch(["explode"], tmp_path / "s")
         body = json.loads(capsys.readouterr().out)

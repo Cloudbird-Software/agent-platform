@@ -205,7 +205,7 @@ def _cmd_up(args: argparse.Namespace) -> int:
         )
     except UpError as e:
         print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
-        return 2
+        return 1
     print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
     return 0 if summary.get("ok", True) else 1
 

@@ -1,4 +1,4 @@
-.PHONY: setup setup-runtime runtime-lock fmt lint arch test build check init doctor up vendor vendor-check docker-build
+.PHONY: setup setup-runtime runtime-lock fmt lint arch test build check init doctor up vendor vendor-check vendor-update drill docker-build
 
 setup:  ; uv sync --all-extras
 # 运行时锁面（ADR-0025）：openjiuwen/jiuwenswarm 钉版 + 哈希锁，
@@ -24,5 +24,8 @@ up:     ; uv run ap up --workspace workspace --team $(T)
 # vendor 快照：check 只读对账（CI 门禁）；update 需显式传 agent-registry 路径
 vendor-check:   ; uv run python scripts/vendor_registry.py
 vendor-update:  ; uv run python scripts/vendor_registry.py $(REG) --update
+
+# 终验演练：init→填 env→doctor→dry-run→ctl 动词→对抗注入→恢复（全链路）
+drill:  ; uv run python scripts/drill.py
 
 docker-build:   ; docker build -t agent-platform:latest .
