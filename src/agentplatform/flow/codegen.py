@@ -213,7 +213,7 @@ def _delivery_body(snap: SpecSnapshot, team: Entity, seats: dict[str, list[dict[
     a(f"{_INDENT}{_INDENT}# remaining() 无界时为 None——不熔断（治理面预算由 agent_gate 闸）")
     a(f"{_INDENT}{_INDENT}if budget.remaining() is not None and budget.remaining() < {BUDGET_FLOOR_TOKENS}:")
     a(f'{_INDENT}{_INDENT}{_INDENT}log("预算撞顶——收束（wave.frozen 语义）")')
-    a(f'{_INDENT}{_INDENT}{_INDENT}break')
+    a(f"{_INDENT}{_INDENT}{_INDENT}break")
     a(f'{_INDENT}{_INDENT}phase("build")')
     a(f"{_INDENT}{_INDENT}await map_parallel(cards, _build_one)")
     a(f'{_INDENT}{_INDENT}phase("verify")')
