@@ -1,9 +1,2 @@
-node_modules/
-dist/
-coverage/
-reports/
-.env
-.env.*
-!.env.example
+logs/
 *.log
-.DS_Store

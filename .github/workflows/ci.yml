@@ -30,16 +30,20 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: npm audit（lockfile 高危阻断）
+      - name: pip-audit（lockfile 高危阻断）
         run: |
-          # 只装 npm（runner 预装）；审计 prod+dev 依赖的 high/critical
-          npm audit --package-lock-only --audit-level=high
+          # Python 仓（ADR-0025 语言准入）：uv lock 与 pyproject 同步校验 + 全量依赖漏洞审计
+          pipx install uv
+          uv lock --check
+          uv export --all-extras --format requirements-txt --output-file /tmp/req.txt --no-hashes
+          pipx install pip-audit
+          pip-audit --requirement /tmp/req.txt --skip-editable
 
   check:
     uses: Cloudbird-Software/CI-Workflows/.github/workflows/check.yml@v1
     with:
-      runtime: node
-      node-version: "24"
+      runtime: python
+      python-version: "3.12"
 
   deps:
     if: github.event_name == 'pull_request'
