@@ -29,9 +29,7 @@ def project(ledger: EventLedger) -> dict[str, Any]:
     for e in ledger.events():
         total += 1
         kinds[e.kind] = kinds.get(e.kind, 0) + 1
-        recent.append(
-            {"seq": e.seq, "kind": e.kind, "actor": e.actor, "card_id": e.card_id, "ts": e.ts}
-        )
+        recent.append({"seq": e.seq, "kind": e.kind, "actor": e.actor, "card_id": e.card_id, "ts": e.ts})
         if len(recent) > RECENT_WINDOW:
             recent.pop(0)
 

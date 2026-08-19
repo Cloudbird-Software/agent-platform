@@ -68,9 +68,13 @@ def _card_show(store: RuntimeStore, a: argparse.Namespace) -> int:
 
 def _budget(store: RuntimeStore, _a: argparse.Namespace) -> int:
     view = store.snapshot()
-    return _ok({"budget": view["budget"], "config": view["config"], "card_accounts": {
-        cid: store.budget.card_account(cid) for cid in view["cards"]
-    }})
+    return _ok(
+        {
+            "budget": view["budget"],
+            "config": view["config"],
+            "card_accounts": {cid: store.budget.card_account(cid) for cid in view["cards"]},
+        }
+    )
 
 
 def _locks(store: RuntimeStore, _a: argparse.Namespace) -> int:

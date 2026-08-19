@@ -59,7 +59,10 @@ class TestRuntimeStore:
         assert reopened.cardgate.state("C-1") == "building"
         assert reopened.cardgate.card("C-1")["change_class"] == "logic"
         assert reopened.budget.card_account("C-1") == {
-            "usd": 3.5, "tokens": 500, "retries_used": 0, "wall_clock": 0.0,
+            "usd": 3.5,
+            "tokens": 500,
+            "retries_used": 0,
+            "wall_clock": 0.0,
         }
         assert reopened.budget._overhead_spent == 1.0
         lock = reopened.writelock.holders()["contracts/api.md"]
@@ -305,7 +308,13 @@ def _tamper_and_verify(store: RuntimeStore) -> None:
 
     evs = list(store.ledger.events())
     bad = GovernanceEvent(
-        seq=evs[0].seq, kind=evs[0].kind, actor="hacker", hash=evs[0].hash,
-        prev_hash=evs[0].prev_hash, ts=evs[0].ts, card_id=evs[0].card_id, payload=evs[0].payload,
+        seq=evs[0].seq,
+        kind=evs[0].kind,
+        actor="hacker",
+        hash=evs[0].hash,
+        prev_hash=evs[0].prev_hash,
+        ts=evs[0].ts,
+        card_id=evs[0].card_id,
+        payload=evs[0].payload,
     )
     EventLedger([bad, *list(evs[1:])]).verify()
