@@ -82,13 +82,19 @@ class WriteLock:
             raise WriteLockError(f"artifact {artifact} 已被 {cur[0]} 持有（active）——写锁不变式")
         self._holders[artifact] = (seat, "active")
         if self._ledger:
-            self._ledger.append("writelock.acquired", "mechanism:scheduler", {"artifact": artifact}, ts=ts)
+            self._ledger.append(
+                "writelock.acquired", "mechanism:scheduler", {"artifact": artifact, "seat": seat}, ts=ts
+            )
 
-    def freeze_holder(self, artifact: str) -> None:
+    def freeze_holder(self, artifact: str, *, ts: float | None = None) -> None:
         """持有者转 frozen（amendment 期间——不释放锁但不再互斥计数）。"""
         cur = self._holders.get(artifact)
         if cur:
             self._holders[artifact] = (cur[0], "frozen")
+            if self._ledger:
+                self._ledger.append(
+                    "writelock.frozen", "mechanism:scheduler", {"artifact": artifact, "holder": cur[0]}, ts=ts
+                )
 
     def release(self, seat: str, artifact: str, *, ts: float | None = None) -> None:
         cur = self._holders.get(artifact)
@@ -102,3 +108,23 @@ class WriteLock:
     def holder(self, artifact: str) -> str | None:
         cur = self._holders.get(artifact)
         return cur[0] if cur else None
+
+    def holders(self) -> dict[str, dict[str, str]]:
+        """artifact → {holder, state}（观测面只读视图）。"""
+        return {a: {"holder": h, "state": s} for a, (h, s) in self._holders.items()}
+
+    # ---- 重放恢复（事件溯源）----
+    @classmethod
+    def from_events(cls, ledger: EventLedger) -> WriteLock:
+        lock = cls(ledger)
+        for e in ledger.events():
+            art = e.payload.get("artifact")
+            if e.kind == "writelock.acquired" and art:
+                lock._holders[art] = (e.payload.get("seat", "?"), "active")
+            elif e.kind == "writelock.frozen" and art:
+                cur = lock._holders.get(art)
+                if cur:
+                    lock._holders[art] = (cur[0], "frozen")
+            elif e.kind == "writelock.released" and art:
+                lock._holders.pop(art, None)
+        return lock
