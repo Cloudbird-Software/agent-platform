@@ -123,6 +123,27 @@ class TestLedgerObserver:
         obs.emit(_FakeEvent("phase", phase="verify"))
         assert obs.run == {"events": 2, "by_kind": {"phase": 2}}
 
+    def test_object_payloads_coerced_to_scalars(self, store: RuntimeStore) -> None:
+        """回归：引擎 workflow_started.phases 是 PhasePlan 对象列表——对象直入账本
+        在严格 JSON 序列化上 TypeError 崩观测面。必须收敛为标量（title/str 预览）。"""
+
+        class _PhasePlan:  # 上游 PhasePlan 最小鸠类型
+            def __init__(self, title: str) -> None:
+                self.title = title
+
+        obs = LedgerObserver(store)
+        obs.emit(
+            _FakeEvent(
+                "workflow_started",
+                name="w",
+                phases=[_PhasePlan("plan"), _PhasePlan("build")],
+                phase=_PhasePlan("plan"),
+            )
+        )
+        ev = store.ledger.events()[-1]
+        assert ev.payload["phases"] == ["plan", "build"]
+        assert ev.payload["phase"] == "plan"
+
 
 # ── GatewayModelResolver ─────────────────────────────────────────────
 

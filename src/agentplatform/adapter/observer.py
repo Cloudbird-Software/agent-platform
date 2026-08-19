@@ -32,6 +32,20 @@ _KindMap = {
 }
 
 
+def _scalar(v: Any) -> Any:
+    """账本只收 JSON 标量；结构体（如 PhasePlan）取 title/str 预览。
+
+    账本序列化严格（确定性哈希链），对象直入会 TypeError 崩观测面——
+    观测桥必须收敛到标量，深度结构属于日志层不属于账本层。
+    """
+    if isinstance(v, (str, int, float, bool)) or v is None:
+        return v
+    t = getattr(v, "title", None)
+    if isinstance(t, str):
+        return t
+    return str(v)[:120]
+
+
 class LedgerObserver:
     """emit(event)：账本事件 + 内存累积（events/run 供引擎侧读取）。"""
 
@@ -51,13 +65,16 @@ class LedgerObserver:
         for f in ("phase", "label", "model", "name"):
             v = getattr(event, f, None)
             if v is not None:
-                payload[f] = v
+                payload[f] = _scalar(v)
         if kind in ("agent_completed", "agent_failed", "workflow_failed"):
             msg = getattr(event, "message", None) or getattr(event, "outcome", None)
             if msg:
                 payload["detail"] = str(msg)[:200]
         if kind == "workflow_started":
-            payload["phases"] = list(getattr(event, "phases", None) or [])
+            # 引擎把 META.phases 规范化为 PhasePlan 对象列表——账本只收标量标题
+            payload["phases"] = [
+                _scalar(p) for p in (getattr(event, "phases", None) or [])
+            ]
         self._store.ledger.append(ledger_kind, "mechanism:engine", payload, card_id=self._card_id)
         self._store.flush()
 
