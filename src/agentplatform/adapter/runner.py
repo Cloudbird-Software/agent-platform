@@ -91,6 +91,13 @@ async def run_team_flow(
     observer = LedgerObserver(store, card_id=card_id)
     admission = BudgetAdmission(store, card_id=card_id)
 
+    # worker 基础 spec：上游 backend 逐 agent() 调用派生 worker harness——
+    # 不给则全座位崩（"requires a worker_base_spec"）。座位模型由 per-call
+    # model_resolver 覆盖；基座挂 default 网关配置（无 hint 调用的兜底）。
+    from openjiuwen.agent_teams.schema.deep_agent_spec import DeepAgentSpec
+
+    worker_base_spec = DeepAgentSpec(model=_build_team_model_config(raw_resolve(None)))
+
     store.ledger.append(
         "wave.flow_started",
         "mechanism:runner",
@@ -106,6 +113,7 @@ async def run_team_flow(
             args=args,
             team_name=team_id,
             model_resolver=model_resolver,
+            worker_base_spec=worker_base_spec,
             agent_gate=admission,
             session_id=session_id,
             abort_event=abort_event,

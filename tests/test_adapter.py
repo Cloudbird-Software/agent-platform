@@ -221,6 +221,8 @@ class TestGatewayModelResolver:
 
 # ── runner（mock 上游——装配逻辑不依赖真实 openjiuwen）───────────────
 
+_SPEC_INSTANCES: list = []
+
 
 class TestRunner:
     @pytest.fixture()
@@ -240,11 +242,46 @@ class TestRunner:
         mod_run.run_swarmflow = run_swarmflow
         mod_schema = types.ModuleType("openjiuwen.agent_teams.workflow.schema")
         mod_schema.TeamModelConfig = object
+
+        class _DeepAgentSpec:
+            """mock：只记录构造参数（worker_base_spec 防回归断言用）。"""
+
+            def __init__(self, **kw) -> None:
+                self.kw = kw
+                _SPEC_INSTANCES.append(self)
+
+        class _TeamModelConfig:
+            def __init__(self, **kw) -> None:
+                self.kw = kw
+
+        mod_spec = types.ModuleType("openjiuwen.agent_teams.schema.deep_agent_spec")
+        mod_spec.DeepAgentSpec = _DeepAgentSpec
+        mod_spec.TeamModelConfig = _TeamModelConfig
+
+        class _Cfg:
+            def __init__(self, **kw) -> None:
+                self.kw = kw
+
+        mod_core = types.ModuleType("openjiuwen.core.foundation.llm.schema.config")
+        mod_core.ModelClientConfig = _Cfg
+        mod_core.ModelRequestConfig = _Cfg
+        for name in (
+            "openjiuwen.core",
+            "openjiuwen.core.foundation",
+            "openjiuwen.core.foundation.llm",
+            "openjiuwen.core.foundation.llm.schema",
+        ):
+            monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
         monkeypatch.setitem(sys.modules, "openjiuwen", mod_root)
         monkeypatch.setitem(sys.modules, "openjiuwen.agent_teams", mod_wf)
         monkeypatch.setitem(sys.modules, "openjiuwen.agent_teams.workflow", mod_wfr)
         monkeypatch.setitem(sys.modules, "openjiuwen.agent_teams.workflow.runner", mod_run)
         monkeypatch.setitem(sys.modules, "openjiuwen.agent_teams.workflow.schema", mod_schema)
+        monkeypatch.setitem(
+            sys.modules, "openjiuwen.agent_teams.schema", types.ModuleType("openjiuwen.agent_teams.schema")
+        )
+        monkeypatch.setitem(sys.modules, "openjiuwen.agent_teams.schema.deep_agent_spec", mod_spec)
+        monkeypatch.setitem(sys.modules, "openjiuwen.core.foundation.llm.schema.config", mod_core)
         return calls
 
     @pytest.fixture()
@@ -279,7 +316,10 @@ class TestRunner:
         m.write(ws)
         return ws
 
-    async def test_assembly_wires_all_hooks(self, tmp_path: Path, workspace, fake_upstream) -> None:
+    async def test_assembly_wires_all_hooks(
+        self, tmp_path: Path, workspace, fake_upstream, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("GW_KEY", "sk-1")
         from agentplatform.adapter.runner import run_team_flow
 
         store_dir = tmp_path / "state"
@@ -294,6 +334,11 @@ class TestRunner:
         assert isinstance(fake_upstream["agent_gate"], BudgetAdmission)
         assert hasattr(fake_upstream["observer"], "emit")
         assert callable(fake_upstream["model_resolver"])
+        # worker 基座必须给（缺则上游 backend 逐座位崩——"requires a worker_base_spec"），
+        # 且基座模型是 default 网关配置（TeamModelConfig），不是裸 Model 对象
+        wbs = fake_upstream["worker_base_spec"]
+        assert wbs is not None and "model" in wbs.kw
+        assert "model_client_config" in wbs.kw["model"].kw
         # 账本收到 runner 边界事件
         store = RuntimeStore.open(store_dir)
         kinds = [e.kind for e in store.ledger.events()]
