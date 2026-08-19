@@ -112,6 +112,32 @@ def _cmd_flow_dryrun(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _cmd_drift_check(args: argparse.Namespace) -> int:
+    from agentplatform.drift import check_workspace
+
+    report = check_workspace(args.registry, args.workspace, skip_spec=args.skip_spec)
+    print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    return 0 if report.ok else 1
+
+
+def _cmd_drift_watch(args: argparse.Namespace) -> int:
+    import sys as _sys
+
+    from agentplatform.drift.checker import watch
+
+    def emit(ev: dict) -> None:
+        print(json.dumps(ev, ensure_ascii=False), file=_sys.stdout, flush=True)
+
+    watch(
+        args.registry,
+        args.workspace,
+        interval_s=args.interval,
+        max_rounds=args.rounds,
+        emit=emit,
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ap", description="agent-platform 控制台")
     sub = parser.add_subparsers(dest="command")
@@ -148,6 +174,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_dry = flow_sub.add_parser("dryrun", help="全链路静态演练（图+编译+lint）")
     p_dry.add_argument("--registry", required=True)
     p_dry.set_defaults(func=_cmd_flow_dryrun)
+
+    p_drift = sub.add_parser("drift", help="声明↔渲染↔磁盘 三方对账")
+    drift_sub = p_drift.add_subparsers(dest="drift_command", required=True)
+    p_dchk = drift_sub.add_parser("check", help="一次对账（漂移即退出码 1）")
+    p_dchk.add_argument("--registry", required=True)
+    p_dchk.add_argument("--workspace", required=True)
+    p_dchk.add_argument("--skip-spec", action="store_true", help="只对账文件面（声明仓不可用降级）")
+    p_dchk.set_defaults(func=_cmd_drift_check)
+    p_dwatch = drift_sub.add_parser("watch", help="周期对账（JSONL 事件流）")
+    p_dwatch.add_argument("--registry", required=True)
+    p_dwatch.add_argument("--workspace", required=True)
+    p_dwatch.add_argument("--interval", type=float, default=30.0)
+    p_dwatch.add_argument("--rounds", type=int, default=None)
+    p_dwatch.set_defaults(func=_cmd_drift_watch)
 
     return parser
 
