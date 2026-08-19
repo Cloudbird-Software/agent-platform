@@ -1,0 +1,19 @@
+version: 1
+gateway:
+  endpoint: env:LLM_GATEWAY_ENDPOINT
+  auth: env:LLM_GATEWAY_KEY
+models:
+  - alias: coder-fast
+    family: flash-family
+    route_group: flash-pool
+    limits: {temperature_max: 0.6}
+    cost_tier: low
+    quota_tier: standard
+    use_for: [code-gen]
+  - alias: reviewer
+    family: flagship-family
+    route_group: flagship-pool
+    limits: {temperature_max: 0.2}
+    cost_tier: high
+    quota_tier: standard
+    use_for: [test-authoring]

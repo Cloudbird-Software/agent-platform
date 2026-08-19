@@ -1,0 +1,21 @@
+id: mini-wave
+version: 1.0.0
+status: approved
+archetype: delivery_squad
+scope: delivery
+goal: 迷你夹具团队
+members:
+- agent: agent:mini-builder
+  seat: builder
+  count: 1
+  as_tool: false
+topology: leader-teammate
+workspace:
+  shared:
+    root: env:TEAM_WORKSPACE_ROOT
+budget:
+  team_envelope:
+    usd: env:TEAM_USD_CAP
+lifecycle:
+  type: ephemeral
+  archive_to: team:stewardship

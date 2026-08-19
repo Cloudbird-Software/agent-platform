@@ -1,0 +1,5 @@
+id: mini-read
+version: 1.0.0
+status: approved
+kind: file-read
+side_effects: [fs_read]

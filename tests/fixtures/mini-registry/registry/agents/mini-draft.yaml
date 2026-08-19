@@ -1,0 +1,17 @@
+id: mini-draft
+version: 0.1.0
+status: draft
+archetype: builder
+trust_zone: trusted_control
+role: "迷你夹具：未批准草稿（存在合法，被引用非法）"
+identity:
+  prompt_ref: registry/identities/mini-builder.md
+model:
+  alias: coder-fast
+capabilities:
+  skills: []
+  tools: [tool:mini-read]
+  allow: [fs_read]
+io_contract:
+  input: {schema_ref: registry/schemas/task-in.json}
+  output: {schema_ref: registry/schemas/findings.json}

@@ -40,8 +40,8 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
-# SIM108：三元表达式强制伤可读性；RUF001/002：中文文档的全角标点误报（本项目注释/文档为中文）
-ignore = ["SIM108", "RUF001", "RUF002"]
+# SIM108：三元表达式强制伤可读性；RUF001/002/003：中文注释/文档的全角标点误报（本项目注释/文档为中文）
+ignore = ["SIM108", "RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
