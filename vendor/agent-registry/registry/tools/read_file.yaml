@@ -1,0 +1,10 @@
+id: read_file
+version: 1.0.0
+kind: builtin
+severity: LOW
+side_effects: [none]
+input: {schema_ref: schemas/path-in.json}
+output: {schema_ref: schemas/file-content.json}
+implementation: {repo: openJiuwen-ai/jiuwenswarm, path: builtin/read_file}
+status: approved
+owner: team:stewardship

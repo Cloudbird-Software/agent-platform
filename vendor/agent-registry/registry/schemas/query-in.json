@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/query-in",
+  "title": "query-in",
+  "description": "检索查询输入",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "query"
+  ],
+  "properties": {
+    "query": {
+      "type": "string"
+    },
+    "max_results": {
+      "type": "integer"
+    }
+  }
+}

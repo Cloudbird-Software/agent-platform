@@ -1,0 +1,67 @@
+id: red-adversary
+version: 2.0.0
+status: approved
+archetype: adversary
+trust_zone: trusted_control
+role: red_cell 服务成员（owner 直属 on-demand，不属任何团队）：执行 control-tests（期望越权失败）；premortem；findings
+  只进数据层（经 stewardship 审核入库——跨团队=可审）
+identity:
+  prompt_ref: identities/red-adversary.md
+model:
+  alias: coder-deep
+  temperature: 0.2
+  reasoning_level: high
+capabilities:
+  skills: []
+  tools:
+  - tool:read_file
+  - tool:bash
+  allow:
+  - fs_read
+  - fs_write_sandbox
+  - vcs_read
+  - shell_sandbox
+  - datastore_read
+  - datastore_write
+  agent_tools:
+    refs: []
+isolation: hermetic
+approval: auto
+workflow:
+  mode: fixed
+  steps_ref: workflows/red-adversary.steps.md
+permissions:
+  inherit: org-default
+  overrides:
+  - tools:
+    - tool:bash
+    pattern: re:.*(production|prod).*
+    action: deny
+credential:                              # ADR-0022 修复 issue #31 B-5：控制测试的凭据借用声明化——
+  github_app: cloudbrid-agent            # adversary 自身 allow 不因测试放大（越权仍被目标侧防线拒），
+  impersonation: "scoped-test-credentials：平台按 control-tests.yaml 每条 CT 的 who 字段
+    签发目标原型一次性凭据副本（作用域=真实凭据——否则测试无意义）；凭据副本经
+    owner 批准的 red_cell 控制测试排期签发（invoke_on: 控制测试排期 weekly），
+    CT 执行期有效、用后即毁（workflows/red-adversary.steps.md 第 8 步，CT-ADV-001）"
+memory:
+  types:
+  - episodic
+  retention: 365d
+guardrails:
+  output_schema_strict: true
+  forbidden:
+  - no-secret-output
+  - no-bypass-gate
+  post_conditions:
+  - '[ci] findings 落数据层 findings/**（不直接开 PR/事件）'
+  - '[llm] 每条控制测试结果附期望 vs 实际'
+io_contract:
+  input:
+    schema_ref: schemas/ct-schedule-in.json
+  output:
+    schema_ref: schemas/findings.json
+expose:
+  as_tool: false
+  a2a_card: none
+workspace:
+  scope: private

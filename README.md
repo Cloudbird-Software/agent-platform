@@ -3,24 +3,49 @@
 agent-registry 声明 → **openjiuwen / jiuwenswarm** 运行时的渲染与治理执行层（L2，ADR-0025）。
 
 ```
-L1  agent-registry（声明，不动）          L2  agent-platform（本仓）               L3  运行态
+L1  agent-registry（声明）               L2  agent-platform（本仓）               L3  运行态
 ┌──────────────────────────┐   渲染   ┌────────────────────────────────┐      ┌──────────────┐
-│ registry/*.yaml          │ ───────▶ │ spec/ 加载 → render/ 渲染      │ ───▶ │ jiuwenswarm  │
-│ standards/*.yaml         │          │ flow/  SwarmFlow 编译器        │      │ workspace +  │
-│ schemas/*.json           │ ◀─────── │ governance/ 机制执行面         │      │ AgentServer  │
-│ (validate + simulate)    │  漂移门禁 │ drift/ 一致性/漂移  observe/ TUI│      │ + Gateway    │
-└──────────────────────────┘          └────────────────────────────────┘      └──────────────┘
+│ registry/*.yaml          │ ───────▶ │ spec/ 加载 → render/ 渲染      │ ───▶ │ openjiuwen   │
+│ standards/*.yaml         │          │ flow/  SwarmFlow 编译器        │      │ SwarmFlow    │
+│ （vendor 快照随仓分发）   │ ◀─────── │ governance/ 机制执行面         │      │ + LLM Gateway│
+│                          │  漂移门禁 │ drift/ 一致性/漂移  observe/ TUI│      └──────────────┘
+└──────────────────────────┘          └────────────────────────────────┘
 ```
 
-## 开箱即用（三条命令）
+## 开箱即用（本机三步）
 
 ```bash
 git clone https://github.com/Cloudbird-Software/agent-platform && cd agent-platform
-cp .env.example .env          # 填 LLM_GATEWAY_ENDPOINT / LLM_GATEWAY_KEY
-docker compose up -d          # 拉起：LiteLLM 网关 + 渲染 + jiuwenswarm（AgentServer+Gateway+Web）
+make setup && make init            # vendor 声明快照 → workspace（渲染+state+env 模板）
+cp workspace/.env.example workspace/.env   # 填 LLM_GATEWAY_ENDPOINT / LLM_GATEWAY_KEY
+make doctor                        # 全绿即可用；执行流先跑零调用预检：
+uv run ap up --workspace workspace --team dev-wave --dry-run
 ```
 
-无 Docker：`make setup && ap render --registry <agent-registry 路径> --out ~/.agentplatform && ap up`。
+live 执行（真实 LLM 调用，治理挂点全接：预算闸/事件账本/模型解析）：
+
+```bash
+make setup-runtime                 # 安装 runtime/requirements.lock 钉版上游（一次性）
+uv run ap up --workspace workspace --team dev-wave
+```
+
+观测与干预：
+
+```bash
+uv run ap tui --state workspace/state     # TUI：卡/预算/锁/事件 实时视图
+agentctl --state workspace/state help     # 干预命令面（JSON 输出，供其他 agent 调用）
+```
+
+## 开箱即用（Docker）
+
+```bash
+cp .env.example .env               # 填 LLM_GATEWAY_KEY（+ provider 上游）
+docker compose up -d               # gateway(LiteLLM) + platform(渲染+漂移守护)
+docker compose run --rm platform up --workspace /app/workspace --team dev-wave --dry-run
+```
+
+声明源默认用仓内 `vendor/agent-registry` 快照（`PROVENANCE.yaml` 记源 commit+digest），
+零参数 `init`；要指向自己的 registry checkout：`--registry <path>` 或 `AGENTPLATFORM_REGISTRY`。
 
 ## 上游钉版（ADR-0025）
 
@@ -52,5 +77,5 @@ make check          # lint + arch（依赖边界）+ test
 
 ## 命令
 
-- `ap` —— 渲染/一致性/启动控制台（随 PR 逐步就位）
-- `agentctl` —— 内部运作干预命令（可被其他 agent 直接调用）
+- `ap` —— 渲染/一致性/启动控制台（`ap --help` 看全部：spec/render/flow/drift/init/doctor/envfile/up/tui/ctl）
+- `agentctl` —— 内部运作干预命令（可被其他 agent 直接调用；`agentctl help` 列出全部动词）

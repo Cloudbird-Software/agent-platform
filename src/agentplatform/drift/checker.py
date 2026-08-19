@@ -11,7 +11,7 @@ from agentplatform.spec import RegistryLoader
 from agentplatform.spec.fingerprint import sha256_hex
 
 # 工作区合法的自有文件（非渲染产物——运行时状态，不参与对账）
-RUNTIME_OWNED = frozenset({".ap", "logs", "state", "trace.jsonl"})
+RUNTIME_OWNED = frozenset({".ap", "logs", "state", "trace.jsonl", ".env", ".env.example"})
 
 
 @dataclass(frozen=True)

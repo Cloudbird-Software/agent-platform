@@ -1,0 +1,82 @@
+id: dev-wave
+version: 3.0.0
+status: approved
+archetype: delivery_squad
+scope: delivery
+goal: 按波次交付服务模块：intent（owner 批）→card_gate→test_author 出题冻结→builder 实现→verifier 判卷→integrator
+  合并→release_bot 上线 behind flag
+members:
+- agent: agent:wave-planner
+  seat: planner
+  count: 1
+  as_tool: false
+- agent: agent:reviewer
+  seat: test_author
+  count: 1
+  as_tool: false            # 实体座位（plan/build/verify/handoff 四相位在场——多轮 review 回路装不进 as_tool 单次往返）
+- agent: agent:backend-dev
+  seat: builder
+  count: 2
+  as_tool: false
+- agent: agent:researcher-code
+  seat: researcher
+  count: 1
+  as_tool: true
+topology: leader-teammate（leader = mechanism:scheduler，openjiuwen 形态）
+orchestration:
+  assign: scheduler 状态机按卡分派（capability_tags 路由；预算熔断 per budget.invariants）
+  merge: integrator 机制（gate.pass AND review.approve；无 agent 持合并权）
+  release: release_bot 部署 behind flag 并写 release_record（rollback_safe 等）
+  phases_ref: standards/team-collaboration.yaml#flow.phases（相位状态机单一真源，不在此重复）
+verification:
+  test_authors:
+  - agent:reviewer
+  verdict_by: mechanism:verifier（对 test_tree_sha 冻结树运行）
+  coverage: all-outputs
+  external_audit:
+    team: team:stewardship
+    frequency: weekly
+    method:
+    - metrics-anomaly
+    - escape-review
+    - re-check-sample
+workspace:
+  shared:
+    root: env:TEAM_WORKSPACE_ROOT
+    version_control: true
+  layout:
+    inbox: inbox/
+    artifacts: artifacts/
+    decisions: decisions/
+    contracts: contracts/
+storage:
+  type: postgresql
+  ref: env:TEAM_DB_DSN
+budget:
+  team_envelope:
+    usd: env:TEAM_USD_CAP
+    wall_clock: env:TEAM_WALL_CLOCK
+  per_card: 按 card.risk_class（卡字段声明）
+  overhead_pool:
+    usd: env:TEAM_OVERHEAD_USD
+  invariants_ref: standards/team-collaboration.yaml#budget.invariants（升级通道永不冻结）
+lifecycle:
+  type: ephemeral
+  trigger: intent.received OR maintenance_wave.trigger   # 前者：组队即 planner 入场产验收示例，
+                                    # intent.ratified=开卡前置（非组队前置）；后者：owner 无新意图时
+                                    # curator 提请维护波次（flows#maintain_loop——backlog 即波次范围）
+  archive_to: team:stewardship
+  handoff:                        # 执行者见 team-collaboration PART 2 delivery_squad.lifecycle.handoff
+  - artifacts-pr                  #   team_side: platform(git 带外) / mechanism:metrics-aggregator / seat:test_author
+  - trace-archive
+  - memory-export                 #   memory_digest 导出（ADR-0018：素材先于 workspace 销毁过界；
+                                    #   执行者=seat:test_author——handoff 相位唯一在场座位，ADR-0021）
+  - retrospective
+  - memory-distill                #   stewardship_side: curator 消费归档资产执行
+  - adr-write
+  destroy_policy: after-handoff
+  destroy_condition: released_behind_flag OR reverted OR no_release_face(wave)
+                                    # 完整条件见 PART 2（no_release_face=全卡 doc/spike 无发布面——merge 即交接，ADR-0021；
+                                    #   destroy_scope：数据层制品不随队销毁）
+channels:
+- web

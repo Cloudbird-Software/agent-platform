@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/curation-out",
+  "title": "curation-out",
+  "description": "归档审核结论（ADR-0004 handoff 消费侧）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "target",
+    "decision",
+    "rationale",
+    "trace_id"
+  ],
+  "properties": {
+    "target": {
+      "type": "string",
+      "description": "被审对象 ref"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "rejected",
+        "needs_revision"
+      ]
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "backlog_proposal": {
+      "type": "object",
+      "description": "可选：产 backlog 提案"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

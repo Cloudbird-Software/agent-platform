@@ -1,0 +1,64 @@
+version: 1
+# ============================================================================
+# Change Classes —— 产品仓变更分级（ADR-0010 第五节采纳）
+# 原则：仪式感与影响半径成正比（anti-ritual-creep——否则治理会被 owner 自己绕过）。
+# 与治理仓 C1/C2/C3（GM-2，治理域）正交：本表管产品仓怎么改代码，那套管治理资产怎么改。
+# ============================================================================
+classes:
+  doc:
+    scope: 注释/README/文档措辞
+    card: optional
+    gate: [lint]
+    review: "none（review.waived——dispatch 表，ADR-0022）"
+    merge: integrator auto
+  trivial:                          # ADR-0014：fix 意图的载体类（自明验收）
+    scope: 单点修复/文案/小改——对错在意图中说清（"错在哪即对在哪"）
+    card: required（卡=意图原文+验收=意图原文；无波次排程，scheduler 直分单 builder）
+    acceptance: self_evident（intent-routing 三分法；不经 intent_ratification 示例批准）
+    gate: [lint, unit]
+    review: none（verifier 判卷不豁免——见 intent-routing fix.note：例外膨胀防线）
+    merge: integrator auto
+    promote_if:                    # 路径规则（机制判定，防"小修"定义膨胀）
+      - 触及 dep/schema 面 → 升 logic/dep/schema
+      - 触及 tests/acceptance/** → 升 logic（强制 test_author review）
+      - 跨模块（>1 模块目录）→ 升 logic
+      - 验收不可自明（需构造示例才能说清"对"）→ 升 deliver（new_ratable）
+      - 同一意图 7d 内产出第 3 张 trivial 卡 → 升 logic（拆分绕过检测——scheduler 计数；
+        ADR-0021：语义复杂度测不准，但拆分行为可测）
+  spike:                            # ADR-0014：investigate 意图的载体类（无合并面）
+    scope: 调研/评估/选型——产认知不产代码（无合并面）
+    card: required（卡=问题清单；验收=问题被证据回答）
+    acceptance: evidence_based（产出 ADR/finding，schema 校验即合格）
+    gate: [adr-schema]              # 产出物 schema 校验（findings.json/ADR 结构）
+    review: curator 入库审核（跨团队=可审；ADR 归 decisions/ 走 C1）
+    merge: n/a（无代码合并面；产出走 ADR/finding 入库 PR）
+  logic:
+    scope: 业务代码/测试
+    card: required
+    gate: [unit, acceptance, hidden(二期), "mutation>=T"]
+    review: test_author（意图符合性——team-collaboration verdict_layers.review；判卷=verifier 机制，两者不混称）
+    merge: integrator auto（required checks 全绿 + verifier verdict + 卡号 metadata）
+  dep:
+    scope: 依赖新增/升级
+    card: required
+    gate: [unit, acceptance, sca, license-check, hash-pin]
+    review: "test_author review + owner_ratify 第三钥（幻觉依赖/抢注是一人公司真实高频风险；
+      dispatch 表——ADR-0022）"
+    merge: integrator auto（owner 批后）
+  schema:
+    scope: 数据库 schema/接口契约
+    card: required
+    gate: [unit, acceptance, migration-dry-run, backup-verified]
+    review: "test_author review + owner_ratify 第三钥（dispatch 表——ADR-0022）"
+    reversibility: required       # 必须附可执行回滚
+    merge: integrator auto（owner 批后）
+  prod:
+    scope: 生产环境变更
+    card: required
+    gate: [smoke, canary]
+    review: "test_author review + owner_per_action（RL-1；=flag 开启/环境审批 non_delegable——
+      生产动作审批发生在 integrate 之后，verify 出边不因其阻塞；dispatch 表，ADR-0022）"
+    merge: "release_bot behind flag（自动+写 release_record）；flag 开启=owner；sev1 前进修复=incident_cell.deployer（owner_required）"
+expedited:
+  rule: 允许降级走快速道，但必须 N<=3 天内补 retro-ADR；curator 追踪为带期限的债（与 incident retro 债同机制）
+  audit: 破玻璃直推仍被 drift-check §8 曝光，24h 回填不变

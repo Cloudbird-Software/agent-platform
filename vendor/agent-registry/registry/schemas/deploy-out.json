@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/deploy-out",
+  "title": "deploy-out",
+  "description": "部署结果（smoke/canary 证据）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incident_id",
+    "executed_actions",
+    "smoke_result",
+    "trace_id"
+  ],
+  "properties": {
+    "incident_id": {
+      "type": "string"
+    },
+    "executed_actions": {
+      "type": "array"
+    },
+    "smoke_result": {
+      "type": "object"
+    },
+    "canary_ref": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

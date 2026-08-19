@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/question-in",
+  "title": "question-in",
+  "description": "检索问题（io_contract 单次往返）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "question",
+    "trace_id"
+  ],
+  "properties": {
+    "question": {
+      "type": "string"
+    },
+    "context_refs": {
+      "type": "array"
+    },
+    "max_tokens": {
+      "type": "integer"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

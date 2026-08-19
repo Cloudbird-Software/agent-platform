@@ -1,4 +1,4 @@
-.PHONY: setup setup-runtime runtime-lock fmt lint arch test build check
+.PHONY: setup setup-runtime runtime-lock fmt lint arch test build check init doctor up vendor vendor-check docker-build
 
 setup:  ; uv sync --all-extras
 # 运行时锁面（ADR-0025）：openjiuwen/jiuwenswarm 钉版 + 哈希锁，
@@ -13,3 +13,16 @@ arch:   ; uv run python scripts/arch_check.py
 test:   ; uv run pytest --cov --cov-report=term-missing
 build:  ; uv build
 check:  lint arch test
+
+# ── 开箱即用三步（ADR-0025 bootstrap）──────────────────────────────
+# make init → cp workspace/.env.example workspace/.env 填凭据 → make doctor
+# 默认声明源 = vendor/agent-registry 快照（零参数；AGENTPLATFORM_REGISTRY 可覆盖）
+init:   ; uv run ap init --out workspace
+doctor: ; uv run ap doctor --registry vendor/agent-registry --workspace workspace
+up:     ; uv run ap up --workspace workspace --team $(T)
+
+# vendor 快照：check 只读对账（CI 门禁）；update 需显式传 agent-registry 路径
+vendor-check:   ; uv run python scripts/vendor_registry.py
+vendor-update:  ; uv run python scripts/vendor_registry.py $(REG) --update
+
+docker-build:   ; docker build -t agent-platform:latest .

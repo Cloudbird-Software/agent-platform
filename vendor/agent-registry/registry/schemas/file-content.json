@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/file-content",
+  "title": "file-content",
+  "description": "文件内容输出",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "path",
+    "content",
+    "truncated"
+  ],
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  }
+}

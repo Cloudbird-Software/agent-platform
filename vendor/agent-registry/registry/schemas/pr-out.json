@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/pr-out",
+  "title": "pr-out",
+  "description": "PR 交付（附卡号+验收引用）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "card_id",
+    "pr_url",
+    "branch",
+    "files_changed",
+    "trace_id"
+  ],
+  "properties": {
+    "card_id": {
+      "type": "string"
+    },
+    "pr_url": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "files_changed": {
+      "type": "array"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

@@ -209,28 +209,29 @@ class TestRunner:
 
     @pytest.fixture()
     def workspace(self, tmp_path: Path) -> Path:
-        """最小渲染产物：config.yaml(models 节) + swarmflow/team.py + manifest。"""
+        """最小渲染产物：models.json + swarmflow/team.py + manifest。"""
+        import json
+
         from agentplatform.render.manifest import RenderManifest
         from agentplatform.spec.fingerprint import sha256_hex
 
         ws = tmp_path / "ws"
         (ws / "swarmflow").mkdir(parents=True)
-        cfg = (
-            "models:\n"
-            "  fast:\n"
-            "    provider: OpenAI\n"
-            "    model: gpt-4o-mini\n"
-            "    base_url: https://gw/v1\n"
-            "    api_key: env:GW_KEY\n"
+        models = json.dumps(
+            {
+                "gateway": {"base_url": "https://gw/v1", "api_key": "env:GW_KEY"},
+                "aliases": ["fast"],
+                "default": "fast",
+            }
         )
-        (ws / "config.yaml").write_text(cfg, encoding="utf-8")
+        (ws / "models.json").write_text(models, encoding="utf-8")
         script = "META = {'name': 't', 'phases': ['build']}\nasync def run(args):\n    return 1\n"
         (ws / "swarmflow" / "team.py").write_text(script, encoding="utf-8")
         m = RenderManifest(
             spec_digest="d" * 64,
             renderer_version="test",
             files={
-                "config.yaml": sha256_hex(cfg),
+                "models.json": sha256_hex(models),
                 "swarmflow/team.py": sha256_hex(script),
             },
             env_refs=("GW_KEY",),

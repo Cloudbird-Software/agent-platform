@@ -1,0 +1,47 @@
+# 开箱即用编排（ADR-0025）——cp .env.example .env 填好后 docker compose up -d。
+#
+# gateway   LiteLLM：alias → provider 解析（模型接入唯一通道，ADR-0002）
+# platform  渲染 + 漂移守护：init workspace（幂等）后常驻三方对账（NDJSON 事件流）；
+#           一次性命令走 docker compose run --rm platform <ap 子命令…>
+services:
+  gateway:
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/app/litellm.yaml", "--port", "4000"]
+    volumes:
+      - ./docker/litellm.yaml:/app/litellm.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LLM_GATEWAY_KEY:?请先 cp .env.example .env 并填 LLM_GATEWAY_KEY}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "litellm", "--health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  platform:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      AGENTPLATFORM_REGISTRY: /app/vendor/agent-registry
+      LLM_GATEWAY_ENDPOINT: http://gateway:4000
+      LLM_GATEWAY_KEY: ${LLM_GATEWAY_KEY:?}
+    volumes:
+      - workspace:/app/workspace
+    command:
+      - sh
+      - -c
+      - |
+        ap init --out /app/workspace
+        exec ap drift watch \
+          --registry /app/vendor/agent-registry \
+          --workspace /app/workspace \
+          --interval 30
+
+volumes:
+  workspace:

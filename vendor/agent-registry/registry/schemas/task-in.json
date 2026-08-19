@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/task-in",
+  "title": "task-in",
+  "description": "工作卡投递（scheduler→builder）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "card_id",
+    "acceptance_refs",
+    "budget",
+    "capability_tags",
+    "trace_id"
+  ],
+  "properties": {
+    "card_id": {
+      "type": "string"
+    },
+    "acceptance_refs": {
+      "type": "array"
+    },
+    "budget": {
+      "type": "object"
+    },
+    "capability_tags": {
+      "type": "array"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

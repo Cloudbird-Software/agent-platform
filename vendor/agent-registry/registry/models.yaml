@@ -1,0 +1,50 @@
+# 模型注册表（single source of truth）
+# 规则（GOVERNANCE AR-3）：
+#   1. agent 声明只引用 alias；alias → 实际 provider/节点的解析只发生在 LLM Gateway 侧
+#   2. 一切 key 只存 gateway 的 secret store（部署时注入 env），任何仓库/声明/agent 配置不得出现明文
+#   3. 用量按 per-team/per-agent 的 gateway key 计量；路由策略（failover/配额）为网关部署配置，落本仓 deploy/llm-gateway
+#   4. family = 模型族（ADR-0010）：独立性按族判定（自偏好偏差在同族同样存在，别名级隔离太弱）
+version: 1
+gateway:
+  endpoint: env:LLM_GATEWAY_ENDPOINT      # 如 http://llm-gateway.internal:4000
+  auth: env:LLM_GATEWAY_KEY
+  deployment_ref: "Cloudbird-Software/agent-registry deploy/llm-gateway"  # 本仓（ADR-0002 rev1）；validate 强制别名对齐
+  upstream_runtime: {repo: openJiuwen-ai/jiuwenswarm, policy: deploy-time-pin}  # 上游官方镜像，不 fork 不 submodule
+  sdk_runtime: {repo: openJiuwen-ai/agent-core, policy: deploy-time-pin}        # 内核 SDK（openjiuwen）——双上游显式化（ADR-0025）；PyPI 钉版覆盖 git@develop
+  strategies: [failover, quota-routing]   # 节点用量耗尽/不可达 → 自动切路由组内下一节点
+models:
+  - alias: coder-fast
+    family: flash-family                  # 族级独立性判定用（ADR-0010）
+    route_group: flash-pool               # gateway 侧一组等价节点，自动 failover
+    limits: {temperature_max: 0.6}
+    cost_tier: low
+    quota_tier: standard                  # 对应 gateway per-key 配额档
+    use_for: [code-gen, routine-tasks]
+  - alias: coder-deep
+    family: flagship-family
+    route_group: flagship-pool
+    limits: {temperature_max: 0.4}
+    cost_tier: high
+    quota_tier: restricted
+    use_for: [architecture, hard-debug]
+  - alias: reviewer
+    family: flagship-family
+    route_group: flagship-pool
+    limits: {temperature_max: 0.2}
+    cost_tier: high
+    quota_tier: standard
+    use_for: [test-authoring, governance-audit]
+  - alias: judge-deep                     # 第三族：judge 必须异于争议双方（builder=flash, test-author=flagship）
+    family: sovereign-family              # 缺第三族时 degraded_mode 触发（activation.on_trigger）
+    route_group: sovereign-pool
+    limits: {temperature_max: 0.2}
+    cost_tier: high
+    quota_tier: restricted
+    use_for: [arbitration, adversarial-audit]
+  - alias: embed-default
+    family: embed-family
+    route_group: embed-pool
+    limits: {}
+    cost_tier: low
+    quota_tier: standard
+    use_for: [memory-retrieval]

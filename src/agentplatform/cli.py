@@ -88,13 +88,15 @@ def _cmd_flow_check(args: argparse.Namespace) -> int:
 
 
 def _cmd_flow_compile(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
     from agentplatform.flow import flow_outputs, load_phase_graph
     from agentplatform.spec import RegistryLoader
 
     snap = RegistryLoader().load(args.registry)
     graph = load_phase_graph(args.registry)
     outs = flow_outputs(snap, graph)
-    out = __import__("pathlib").Path(args.out)
+    out = Path(args.out)
     for rel, text in sorted(outs.items()):
         target = out / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -155,6 +157,57 @@ def _cmd_ctl(args: argparse.Namespace) -> int:
     from agentplatform.observe.agentctl import dispatch
 
     return dispatch(args.verb_args, args.state)
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    from agentplatform.bootstrap import init_workspace
+
+    summary = init_workspace(args.registry, args.out, envelope_usd=args.envelope, overhead_usd=args.overhead)
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    from agentplatform.bootstrap import run_doctor
+
+    result = run_doctor(registry=args.registry, workspace=args.workspace, human=not args.json)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result["ok"] else 1
+
+
+def _cmd_envfile(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from agentplatform.bootstrap import render_envfile
+
+    text = render_envfile(args.workspace)
+    if args.write:
+        p = Path(args.workspace) / ".env.example"
+        p.write_text(text, encoding="utf-8")
+        print(json.dumps({"written": str(p)}, ensure_ascii=False))
+    else:
+        print(text)
+    return 0
+
+
+def _cmd_up(args: argparse.Namespace) -> int:
+    from agentplatform.bootstrap import UpError, run_up
+
+    try:
+        summary = run_up(
+            args.workspace,
+            args.team,
+            state=args.state,
+            dry_run=args.dry_run,
+            model=args.model,
+            args_json=args.args_json,
+        )
+    except UpError as e:
+        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        return 2
+    print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
+    return 0 if summary.get("ok", True) else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -219,6 +272,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_ctl.add_argument("--state", default="workspace/state", help="state 目录")
     p_ctl.add_argument("verb_args", nargs=argparse.REMAINDER, help="动词及参数（ap ctl help 列出全部）")
     p_ctl.set_defaults(func=_cmd_ctl)
+
+    p_init = sub.add_parser("init", help="workspace 初始化（渲染+state+env 模板，幂等）")
+    p_init.add_argument(
+        "--registry", default=None, help="agent-registry 路径（默认 vendor/agent-registry 快照）"
+    )
+    p_init.add_argument("--out", required=True, help="workspace 输出目录")
+    p_init.add_argument("--envelope", type=float, default=100.0, help="team_envelope usd")
+    p_init.add_argument("--overhead", type=float, default=20.0, help="overhead_pool usd")
+    p_init.set_defaults(func=_cmd_init)
+
+    p_doc = sub.add_parser("doctor", help="开箱自检（env/渲染/漂移/账本/runtime）")
+    p_doc.add_argument("--registry", default=None, help="agent-registry 路径（drift 面需要）")
+    p_doc.add_argument("--workspace", default=None, help="workspace 目录")
+    p_doc.add_argument("--json", action="store_true", help="JSON 输出（默认人读表格）")
+    p_doc.set_defaults(func=_cmd_doctor)
+
+    p_env = sub.add_parser("envfile", help="生成 .env.example（manifest.env_refs 驱动）")
+    p_env.add_argument("--workspace", required=True, help="workspace 目录")
+    p_env.add_argument("--write", action="store_true", help="写入 <workspace>/.env.example（默认打印）")
+    p_env.set_defaults(func=_cmd_envfile)
+
+    p_up = sub.add_parser("up", help="执行团队 SwarmFlow（live 全挂点；--dry-run 零调用预检）")
+    p_up.add_argument("--workspace", required=True, help="workspace 目录")
+    p_up.add_argument("--team", required=True, help="团队 id（swarmflow/<team>.py）")
+    p_up.add_argument("--state", default=None, help="state 目录（默认 <workspace>/state）")
+    p_up.add_argument("--dry-run", action="store_true", help="预检：渲染/脚本/凭据，不发起 LLM 调用")
+    p_up.add_argument("--model", default=None, help="默认模型 alias（缺省取渲染配置首个）")
+    p_up.add_argument("--args-json", default=None, help="flow run(args) 入参（JSON 字符串）")
+    p_up.set_defaults(func=_cmd_up)
 
     return parser
 

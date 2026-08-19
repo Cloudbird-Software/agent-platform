@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/wave-plan",
+  "title": "wave-plan",
+  "description": "波次计划（planner 输出；卡字段=team-collaboration artifacts.card.fields_required）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "wave_id",
+    "intent_id",
+    "acceptance_examples",
+    "cards",
+    "trace_id"
+  ],
+  "properties": {
+    "wave_id": {
+      "type": "string"
+    },
+    "intent_id": {
+      "type": "string"
+    },
+    "acceptance_examples": {
+      "type": "array",
+      "description": "5~15 条输入→期望输出；owner 批准对象"
+    },
+    "cards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "goal",
+          "acceptance_refs",
+          "capability_tags",
+          "depends_on",
+          "risk_class",
+          "change_class",
+          "budget",
+          "applies_adr",
+          "applies_skill",
+          "trace_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "acceptance_refs": {
+            "type": "array",
+            "description": "owner 已批验收示例 id"
+          },
+          "capability_tags": {
+            "type": "array"
+          },
+          "depends_on": {
+            "type": "array"
+          },
+          "risk_class": {
+            "type": "string",
+            "enum": [
+              "low",
+              "high"
+            ]
+          },
+          "change_class": {
+            "type": "string",
+            "enum": [
+              "doc",
+              "trivial",
+              "spike",
+              "logic",
+              "dep",
+              "schema",
+              "prod"
+            ]
+          },
+          "budget": {
+            "type": "object",
+            "required": [
+              "tokens",
+              "wall_clock",
+              "retries",
+              "usd"
+            ],
+            "properties": {
+              "tokens": {
+                "type": "integer"
+              },
+              "wall_clock": {
+                "type": "string"
+              },
+              "retries": {
+                "type": "integer"
+              },
+              "usd": {
+                "type": "number"
+              }
+            }
+          },
+          "applies_adr": {
+            "type": "array"
+          },
+          "applies_skill": {
+            "type": "array"
+          },
+          "test_tree_sha": {
+            "type": "string",
+            "description": "test_author 冻结后回写"
+          },
+          "trace_id": {
+            "type": "string",
+            "description": "贯穿意图→卡→run→判决→事件——builder 输入 schemas/task-in.json 的 trace_id 由此注入（planner→builder 链路闭合，无未声明注入者；ADR-0022 修复 issue #31 D-5）"
+          }
+        }
+      }
+    },
+    "contracts_ref": {
+      "type": "string",
+      "description": "contracts/<wave_id>.yaml（N>1 时必填）"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

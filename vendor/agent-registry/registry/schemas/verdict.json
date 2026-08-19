@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/verdict",
+  "title": "verdict",
+  "description": "判决（decision_made 自述事件载体；reversible_by=owner 恒定）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dispute_id",
+    "decision",
+    "rationale",
+    "jurisdiction_basis",
+    "reversible_by",
+    "trace_id",
+    "case_law_dispositions"
+  ],
+  "properties": {
+    "dispute_id": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "for_builder",
+        "for_test_author",
+        "escalate_owner"
+      ]
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "jurisdiction_basis": {
+      "type": "string",
+      "description": "管辖依据（授权域条目）"
+    },
+    "case_law_dispositions": {
+      "type": "array",
+      "description": "逐项 follow/distinguish（禁自证无相关判例）"
+    },
+    "reversible_by": {
+      "type": "string",
+      "const": "owner"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

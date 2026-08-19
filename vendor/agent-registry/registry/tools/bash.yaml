@@ -1,0 +1,12 @@
+id: bash
+version: 1.0.0
+kind: shell
+severity: HIGH
+side_effects: [shell_sandbox, fs_write_sandbox]              # v2 词表（side-effects.yaml）；沙箱 shell 无网无生产凭据（网络只经 web_search/researcher——trust zone 要求）
+input: {schema_ref: schemas/bash-in.json}
+output: {schema_ref: schemas/bash-out.json}
+implementation:
+  repo: openJiuwen-ai/jiuwenswarm           # 编排框架内置（registry/projects.yaml 单一真源——org 名漂移修复，ADR-0018）
+  path: builtin/bash
+status: approved
+owner: team:stewardship

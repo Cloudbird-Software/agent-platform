@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/review-decision",
+  "title": "review-decision",
+  "description": "review 层裁定事件 payload（verify 相位出边事件 review.approve / review.changes_requested / review.waived 的信封内容）。裁定=decision 类自述事件经 review.* 频道发布（team-collaboration channels.acl——非 datastore 直写）；与 io_contract 输出（任务产物）是两条通道。ADR-0022 修复 issue #31 B-4：合并第二钥匙的产出形状显式化。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pr_id",
+    "card_id",
+    "change_class",
+    "decision",
+    "reviewer_seat",
+    "trace_id"
+  ],
+  "properties": {
+    "pr_id": {
+      "type": "string",
+      "description": "被裁定的 PR（spike/doc 类=产出入库 PR）"
+    },
+    "card_id": {
+      "type": "string"
+    },
+    "change_class": {
+      "type": "string",
+      "enum": ["doc", "trivial", "spike", "logic", "dep", "schema", "prod"]
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "changes_requested", "waived"],
+      "description": "waived=dispatch 表判定 change_class.review==none（card_gate 产，doc/trivial）——waived≠免判卷"
+    },
+    "rationale": {
+      "type": "string",
+      "description": "changes_requested 时必填（返工依据）"
+    },
+    "reviewer_seat": {
+      "type": "string",
+      "enum": ["test_author", "curator"],
+      "description": "按 verdict_layers.review.dispatch 分派（curator 仅 spike 入库审核）"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "贯穿 intent→卡→run→判决→事件（channels.routed_a2a 信封强制）"
+    }
+  }
+}

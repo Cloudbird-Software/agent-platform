@@ -1,0 +1,83 @@
+version: 1
+# ============================================================================
+# Checks Registry —— check:* 防线注册表（ADR-0012）
+# ============================================================================
+# 单一真源：声明（standards/ + registry/）中一切 check:<id> 引用必须 ∈ 本注册表。
+# validate.py 校验（fail-closed）：未登记的 check 引用 = 悬空防线 = CI 拒绝
+# ——与 side-effects 词表（capabilities 白名单）、control-tests（ct-coverage）同模式。
+#
+# 字段：
+#   status: active = 已生效（CI check / 机制门禁 / 平台 ruleset 任一形态）
+#           planned = 已登记未实装（引用合法，消费方按 activation 判定）
+#   where:  实现位置（或计划位置）；引用悬空的代价由注册表面显式承担
+#   consumed_externally: true = 消费方在平台仓（ruleset/workflow），
+#           本仓声明层无 check: 引用属正常——validate 反向校验跳过
+#
+# 登记项与 activation 对齐（team-collaboration PART 5）：
+# 机制无"待触发"状态（被依赖即工作）；planned 仅用于"check 形态"未实装、
+# 或其宿主机制本身在 on_trigger 清单中的项。
+# ============================================================================
+
+checks:
+  - id: gate
+    status: active
+    consumed_externally: true
+    where: 各仓 CI 聚合 job（CI-Workflows ci.yml#gate；agent-registry validate.yml#gate；
+      .github gate.yml#gate）——org ruleset required check（GOVERNANCE BP-2）
+
+  - id: intent-ratified
+    status: active
+    where: card_gate 开卡前置（intent.ratified_by 判定，scheduler 前置检查——
+      team-collaboration PART 3 卡与流；CT-PLN-003）
+
+  - id: test-tree-freeze
+    status: active
+    where: test_author 相位产 test_tree_sha 冻结测试树；verifier 仅对冻结树判卷
+      （profiles test-author/verifier；防"边跑边改判卷对象"）
+
+  - id: pr-identity-path-matrix
+    status: planned
+    where: ADR-0010 二期：产品仓模板 required check（身份×路径矩阵）；
+      激活前由 token-path-scope 部分承担；profiles 三处 enforced_by 引用
+
+  - id: adr-required
+    status: active
+    where: C1 路径（standards/、decisions/、scripts/、.github/、CODEOWNERS、tests/）变更
+      而 PR title/body 无 ADR-NNNN 引用、或被引 ADR 不在 PR head 的 decisions/
+      则 fail（agent-registry validate.yml + .github gate.yml + CI-Workflows ci.yml
+      的 adr-required 步骤，ADR-0013 实装、ADR-0016 补 CI-Workflows 执行点——
+      CT-CUR-003 闭环；CODEOWNERS owner-only review 仍在，双防线）
+
+  - id: rollback-plan-required
+    status: active
+    where: deployer guardrails must_run rollback-plan-verify（无预案不执行，fail-closed）
+      + RL-1 production environment 人工审批（profiles deployer；CT-DEP-001/003）
+
+  - id: flag-enable-owner-only
+    status: active
+    where: attention-ledger non_delegable（flag_enable_decision：flag 开启必须 owner）
+      + RL-1 environment 门禁；release_bot 只部署不开启（CT-RLB-001）
+
+  - id: retro-debt-aging
+    status: active
+    where: metrics-aggregator 追踪 retro 债逾期（incidents.* 事件计数——
+      CT-RSP-002；预授权动作 24h retro 审计）
+
+  - id: precedent-non-normative
+    status: planned
+    where: case_law 入库时非规范标注（curator）——随 case_law 激活
+      （on_trigger：judge 争议累计 >= 5；未激活无判例可标）
+
+  - id: spawn-manifest-conformance
+    status: active
+    consumed_externally: true
+    where: 声明层=validate.py（装配覆盖/组件词表/记忆契约一致性——ADR-0018 实装）；
+      平台侧=template_service 编排模板注入收敛（spawn 只注入清单内组件，
+      清单外注入=平台违规——随模板仓落地，声明层先行）
+
+  - id: supply-audit
+    status: planned
+    consumed_externally: true
+    where: CI-Workflows 定时任务（osv-scanner/renovate 扫 registry/projects.yaml
+      登记的 git 依赖与各仓 lockfile；Dependabot 不识别 YAML 清单故由扫描 job
+      消费；发现→maintain_loop issue——ADR-0018 登记，待平台仓实装）

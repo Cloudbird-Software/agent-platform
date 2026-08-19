@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/bash-in",
+  "title": "bash-in",
+  "description": "shell 工具输入",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "command"
+  ],
+  "properties": {
+    "command": {
+      "type": "string"
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "timeout_s": {
+      "type": "integer"
+    }
+  }
+}

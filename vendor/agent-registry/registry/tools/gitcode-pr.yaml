@@ -1,0 +1,12 @@
+id: gitcode-pr
+version: 1.0.0
+kind: api
+severity: MEDIUM
+side_effects: [vcs_branch_push, vcs_pr_open]                 # v2 词表：开分支+提 PR；无合并权（API 传输读不算 net_read 外部摄取）
+input: {schema_ref: schemas/pr-in.json}
+output: {schema_ref: schemas/pr-out.json}
+implementation:
+  repo: Cloudbird-Software/agent-tools
+  path: tools/gitcode_pr
+status: approved                        # proposed → approved 须经 PR 评审（AR-2）
+owner: team:stewardship

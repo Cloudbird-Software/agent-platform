@@ -1,0 +1,127 @@
+version: 1
+# ============================================================================
+# Flows —— 闭环两端 + 事件完整性 + 预算（ADR-0010 第三节/四节采纳）
+# 这是声明性标准：具体执行体（scheduler/gateway/CI check）引用此处的规则 id。
+# ============================================================================
+
+# ---- A. 意图保真：人审点前移到"验收示例批准"（比计划评审更高杠杆）----
+intent_ratification:
+  problem: 全链路验证"实现符合规格"，但规格是否符合意图此前无人验证——高效完美地造错东西
+  steps:
+    1: interface-gateway 结构化 intent（schema 校验后入数据层）
+    2: planner 产验收示例 5~15 条（具体输入→期望输出/可观察行为；owner 30 秒可读；不是实现描述）
+    3: owner 逐条批准/修改 → 签名+hash 落事件流（intent.ratified_by=owner）
+    4: 未批准的意图不得开卡（check:intent-ratified，scheduler 前置，CT-PLN-003）
+  acceptance_digest:
+    rule: "波次完成时产出一屏证据包（curl 记录/截图/golden diff/verdict 逐条对照已批示例）——不是只给 verdict:pass"
+    why: "owner 的注意力应花在『这是我想要的吗』，不是『测试绿了吗』"
+  shortcuts:                        # ADR-0014：验收三分法——不是一切意图都走全流程
+    self_evident:                   # fix/trivial：意图原文即验收（"错在哪即对在哪"）
+      rule: 卡=意图原文；不经示例批准（intent-routing.intents.fix）
+      guard: 升级例外照常（change-classes.trivial.promote_if——路径规则机制判定）
+    pre_approved:                   # maintain：当年批准检查=预批未来复绿
+      rule: drift 绿 / CT 过 / 版本升即验收，无交互（intent-routing.intents.maintain）
+      guard: 预批准不可迁移到新验收面（drift 复绿预批的是"回到期望状态"，不是"期望状态改变"）
+    evidence_based:                 # investigate/spike：问题被证据回答即合格
+      rule: 产出 ADR/finding schema 校验通过（intent-routing.intents.investigate）
+      guard: 结论必须附引用（禁无证据断言——findings.json sources minItems:1）
+
+# ---- B. 现实反馈：escape 闭环（唯一能真实评价验证体系的指标）----
+escape_review:
+  trigger: owner 或生产发现了通过全部 gate 的缺陷（escaped defect）
+  steps:
+    1: 归因四选一——spec_gap（规格错/意图失真）| test_gap（测试没覆盖）| impl_gap（实现偏离）| env_gap（环境差异）
+    2: 产 backlog 提案（含回归测试卡提案+归因）——原队常已销毁，回归测试由下一波次 test_author 经新卡落地
+       （下一波次 producer_gate 强制处置该提案：纳入即含回归测试验收）
+    3: 按归因更新：spec_gap→规格模板/policy；test_gap→测试指引/mutation 阈值；impl_gap→TDD 流程；env_gap→环境契约
+    4: 落 escape_found 事件（生产者=owner 经 interface-gateway，平台落事件；含归因+回溯链：缺陷→PR→卡→意图→验收示例）
+    5: 复发检测（ADR-0021）：同一归因的 escape 累计 >=2 次 → 升 systemic finding（policy_gap 类，severity=security）
+       强制入 owner 周审——同根因复发=防线系统性失效，不再按单次事故处理
+  metrics: escape_rate by change_class & by 归因（metrics-aggregator 周报）
+  note: escape_rate 比 mutation score 更贴近现实；它是 test-author/verifier 有效性的最终裁判
+
+# ---- C. 事件流完整性（所有 verified_by 的地基）----
+event_integrity:
+  emitted_by: {field: required, values: [platform, agent]}   # 强制字段
+  rules:
+    - tool_called 类事件只能 emitted_by=platform（工具调用网关带外发出；agent 无事件写凭据）
+    - agent 只可发自述类事件（decision_made/claim），且必须带 trace_id
+    - 存储 append-only（对象锁）+ 哈希链（prev_hash），写凭据与所有 agent 隔离
+  rationale: 若事件由 agent 自行上报，"不报即隐身"，全部审计断言失效（CT-EVT-001 守护）
+
+# ---- D. 预算与熔断（成本跑飞防线；机制而非裁量）----
+budget:
+  per_card: {tokens: required, wall_clock: required, retries: "按 card.risk_class（默认 1；risk_class=high 可声明至 2）", usd: required}
+  enforcement:
+    - LLM Gateway per-run 虚拟 key 限额（tokens/usd 硬顶，超限 fail-closed）
+    - scheduler 状态机管 wall_clock/retries：按卡 retries 上限同参重试，再失败必须回 planner 重新规划（禁止对 builder 反复轰炸）
+    - 并发上限按团队声明；熔断触发落 circuit_broken 事件
+  on_exceed: fail-closed（宁可停，不可烧）
+
+# ---- E. 事故流（responder 预授权的法律逻辑）----
+incident:
+  phases: [detect, respond(pre-authorized), notify, retro_24h]
+  authorization_ref: standards/team-collaboration.yaml#teams.incident_cell.authorization
+    # v1.0 条件预授权（按 severity×release_record.rollback_safe 分档）——本节不复述，防双源漂移
+  rules:
+    - 恢复类动作先做后报（async_notify），全留痕
+    - 白名单外动作只能上报 owner
+    - 24h 内补事件详情与 retro；curator 追踪逾期债（CT-RSP-002）
+
+# ---- F. 维护回路（ADR-0014：周扫发现→修复，无人手动启动 agent）----
+maintain_loop:
+  problem: 周扫（drift-check/CT/dependabot/scorecard）产 issue 后，若靠 owner 记得手动
+    起人修——issue 会躺在列表里腐烂；维护是系统的代谢，不是人的待办
+  issue_lifecycle:                  # issue 是 backlog 的前端展示，不是独立队列
+    open: "外部扫描器自动开（含指标/证据/期望状态引用）——dependabot/scorecard 平台带外
+      （显式依赖，体系外）；supply-audit（checks.yaml planned）激活后并入。本仓内机制
+      不自开 issue：drift-check 产 drift 报告经 owner 周审转 proposals、CT 失败经
+      adversary findings、escape 经 owner——入口收敛于外部扫描器（ADR-0022 显式化，
+      issue #31 C-4）"
+    triage: curator 周审转 backlog.proposals（多写者→单写者归并；severity 标注）
+    consumed: planner 组波次 producer_gate 必处置 top-k（纳入/驳回+理由/延期+条件）
+    closed: 修复 PR 关 issue + 复绿证据（check 复跑通过）——无复绿证据不得关
+    deferred: 唯一豁免出口——必须带机器可判定条件 + 理由；aging 指标可见（见下）
+  invariants:
+    - "issue 不可能『躺在列表里』：要么被消费、要么被显式驳回（留理由）、要么 deferred（带条件）——三选一强制，无第四态"
+    - "deferred 条件到期自动重排 top-k（curator 机制扫描）——豁免也有保质期"
+  maintenance_wave:                 # owner 不下新意图时的自救通道
+    trigger: backlog 存在 security 级条目 OR aging 最老条目 > 30d（机器可判定；二者其一）
+    driver: mechanism:metrics-aggregator（每日聚合 aging/security 标注使 trigger 可判定；
+      机制被依赖即工作——ADR-0021：驱动源显式化，curator 周审消费其产出）
+    executor: stewardship 提请（curator）→ delivery_squad 以 backlog 为波次范围组建
+    acceptance: pre_approved（复绿即验收——intent-routing maintain；security 级升 owner_ratify）
+  metrics: [backlog_aging_p50/p95, deferred_count, maintenance_wave_count]   # metrics-aggregator 周报
+
+# ---- G. owner 控制（ADR-0014 PR-B：任务暂停/终止——控制动词=事件不是凭据）----
+owner_control:
+  entry: TUI 控制面板 / interface-gateway（observability.control_surface——同一入口）
+  scope: 卡级（波级冻结已有 wave.frozen——scheduler 预算熔断；owner 控制不重复波级）
+  verbs:
+    pause:
+      semantics: 停表停预算——wall_clock 不计暂停时间（诚实不惩罚的延伸：
+        owner 暂停思考不应烧掉卡的时间预算）；usd 已花照记（沉没成本是真实的）
+      target_states: [building, verify]   # 执行态才可暂停；drafting/ratified 本就未走表
+      event: "card.paused（producer: owner 经平台通道——observability 同模式）"
+    resume:                            # 顶层动词（与 observability.control_surface.verbs 三动词对齐）
+      semantics: 回原相位，走表恢复；暂停时长记入卡时间线（trace 可见）
+      target_states: [paused]           # 仅暂停态可恢复——回 pause 进入前的原相位
+      event: "card.resumed（producer: owner 经平台通道——observability 同模式）"
+    abort:
+      semantics: 不可逆终止；reason 必填（落事件——无 reason 的 abort 不可接受：
+        组织的每个废动作都该有死因，否则 retro 无从归因）
+      target_states: 卡生命周期的任何非终态（终态=merged/archived/aborted）
+      reason_routing:                  # reason 决定善后，不是人决定
+        need_gone: 需求消失 → 卡 archived(作废)；无善后
+        spec_wrong: 规格错了 → 产 escape 类 finding 退 backlog（卡回炉——接 escape 回路：
+          规格错误是 planner 产卡质量问题，amendment_rate 归因）
+        superseded: 被更新意图取代 → 关联新卡 id 落事件，原卡 archived
+      event: "card.aborted（producer: owner 经平台通道）"
+  invariants:
+    - "控制动词是事件不是凭据：owner 经 TUI/interface-gateway 落 card.* 事件，
+      平台执行——TUI 无数据层写凭据（observability.read_only）"
+    - "注意力账本不新增阻塞点：账本管『系统等 owner』；owner 主动出手（pause/abort）
+      不入账本——反向的『owner 等系统响应』由 feedback_loop 保证（视图即时反映）"
+    - "abort 后预算对账：已耗 usd 记账不退（沉没成本入 metrics——abort_rate 高是
+      intent 质量信号，归因 interface-gateway 路由准确率而非 builder）"
+  metrics: [pause_count, pause_duration_p95, abort_rate(by reason_routing)]

@@ -15,12 +15,43 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 
 class ModelResolutionError(Exception):
     """alias 未登记或 env 缺失——fail-closed（不静默回退默认模型）。"""
+
+
+def load_models_registry(workspace: str | Path) -> dict[str, dict]:
+    """workspace/models.json → resolver 注册表（渲染面与执行面的唯一缝）。
+
+    返回 {alias: {provider, model, base_url, api_key}}（env: 符号原样保留，
+    解析时才查 os.environ）。
+    """
+    p = Path(workspace) / "models.json"
+    if not p.is_file():
+        raise ModelResolutionError(f"{p} 不存在（渲染产物缺执行面注册表——重新 ap init）")
+    data = json.loads(p.read_text(encoding="utf-8"))
+    gw = data.get("gateway") or {}
+    base_url, api_key = gw.get("base_url", ""), gw.get("api_key", "")
+    registry: dict[str, dict] = {}
+    for alias in data.get("aliases", []):
+        registry[str(alias)] = {
+            "provider": "openai",
+            "model": str(alias),
+            "base_url": base_url,
+            "api_key": api_key,
+        }
+    default = str(data.get("default") or "")
+    if default:
+        registry["default"] = dict(registry.get(default) or {"provider": "openai", "model": default})
+        registry["default"].update({"base_url": base_url, "api_key": api_key, "model": default})
+    if not registry:
+        raise ModelResolutionError("models.json 空（声明面 models.yaml 无 alias？）")
+    return registry
 
 
 @dataclass(frozen=True)

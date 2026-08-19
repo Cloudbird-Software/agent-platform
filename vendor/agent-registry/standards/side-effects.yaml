@@ -1,0 +1,65 @@
+version: 2
+# ============================================================================
+# Side-Effect Vocabulary v2 —— 工具副作用与权限白名单的统一词表（ADR-0010）
+#
+# v1 只有 4~5 类（filesystem_write/vcs_write/shell_exec/network），过粗，导致
+# v1 profiles 至少 5 处自相矛盾（禁 vcs_write 却要提测试 PR 之类）。v2 按语义
+# 分六组；capabilities.allow 白名单与本词表同域（未列出即禁止，fail-closed）。
+#
+# 消费方（validate.py 强制）：
+#   tool.side_effects   ⊆ 本词表
+#   agent.capabilities.allow ⊩ ⊆ 本词表
+#   agent 持有的每个 tool：tool.side_effects ⊆ agent.capabilities.allow
+# ============================================================================
+groups:
+  read:                        # 只读——不改变任何系统状态
+    fs_read:          读本地/工作区文件
+    vcs_read:         读仓库（clone/fetch/读 PR diff）
+    net_read:         读外部网络（web 检索/拉取外部文档）——不可信输入通道（trust zone 管控）
+    datastore_read:   读数据层（事件流/指标/判例）
+    memory_read:      读自身或授权记忆
+  write:                       # 写——但不触碰 git 历史与生产
+    fs_write_sandbox: 写自身沙箱/临时区（运行产物，随任务销毁）
+    fs_write_repo:    写仓库工作区文件（含提 PR 的内容路径；路径范围另由 permissions.overrides / token scope 收窄）
+    memory_write:     写自身记忆（经敏感过滤；记忆不是规范来源）
+    datastore_write:  写数据层（findings/事件回填/指标；集合范围另收窄）
+  vcs:                         # git 协作动作——写历史/评审流
+    vcs_branch_push:  推送自己的分支（不改 main）
+    vcs_pr_open:      开 PR / 评论 / 请求评审
+    vcs_merge:        合并到保护分支——只属于 integrator 机制（P0-6：合并=状态函数，不授予任何 agent）
+    vcs_admin:        改仓库设置/ruleset/secret/CODEOWNERS——全系统唯 owner 持有
+  exec:                        # 执行
+    shell_sandbox:    隔离环境内 shell（测试/构建/静态分析；无生产凭据）
+    shell_host:       宿主 shell（特权；仅 deployer 类且逐动作人签）
+    ci_trigger:       触发 CI/工作流（含自定 run 的输入）
+  supply:                      # 供应链（一人公司高频风险：幻觉依赖/抢注）
+    dependency_add:   新增/升级依赖（manifest 锁定物变更）
+    package_publish:  发布包/镜像
+  infra:                        # 生产
+    deploy_forward:   前进变更（部署新版本/迁移开关）
+    deploy_reverse:   回滚/降级/回退迁移——responder 的预授权恢复动作
+    feature_flag:     翻特性开关（含 kill switch）
+    failover:         切换灾备/备用实例（流量切换，不动代码）——responder 预授权恢复动作
+    scale:            容量伸缩（扩容/缩容——容量恢复动作，非代码前进）——responder 预授权恢复动作
+    schema_migrate:   数据库 schema 变更
+    data_freeze:      冻结写入（停止流血动作：只读锁/停写入队列——非删除非回滚，可逆）
+    data_delete:      删数据（不可逆；最高审）
+    secret_read:      读生产密钥（environment 门禁 + RL-1）
+# 特殊值：none —— 纯函数工具（如 read_file）无副作用
+none_value: none
+
+# ---- 执行通道词表（ADR-0022：issue #31 收敛判据 9——allow 与工具面的双向覆盖）----
+# 每个副作用词必居其一（validate fail-closed：allow 中的词若无通道承载即漂移）：
+#   tool_required  只能经 registry/tools 声明的工具执行——agent 持该词 ⟹ 必须持有
+#                  副作用含该词的工具（删工具=失能力，防"白名单纸面授权"）
+#   platform_direct 经平台 ops API/机制直达（ADR-0021 立场：infra 动作不经
+#                  registry/tools；凭据作用域、审计、限流由平台承载——agent 侧
+#                  由 credential 块 + capabilities.allow 声明）
+#   runtime_builtin 编排层内建能力（读写自身上下文必需的基底面；每个实例默认拥有）
+delivery_channels:
+  tool_required: [fs_write_sandbox, fs_write_repo, net_read, shell_sandbox, vcs_branch_push, vcs_pr_open]
+  platform_direct: [ci_trigger, data_delete, data_freeze, datastore_read, datastore_write,
+                    dependency_add, deploy_forward, deploy_reverse, failover, feature_flag,
+                    package_publish, scale, schema_migrate, secret_read, shell_host,
+                    vcs_admin, vcs_merge]
+  runtime_builtin: [fs_read, vcs_read, memory_read, memory_write]

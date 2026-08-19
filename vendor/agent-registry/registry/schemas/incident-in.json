@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/incident-in",
+  "title": "incident-in",
+  "description": "事故信号（机制判定 severity 后投递 responder）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incident_id",
+    "severity",
+    "alert_source",
+    "release_record_snapshot",
+    "authorization_basis",
+    "trace_id"
+  ],
+  "properties": {
+    "incident_id": {
+      "type": "string"
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "sev1",
+        "sev2"
+      ]
+    },
+    "alert_source": {
+      "type": "string"
+    },
+    "release_record_snapshot": {
+      "type": "object",
+      "description": "rollback_safe/window/flag_ids 快照"
+    },
+    "authorization_basis": {
+      "type": "string",
+      "description": "incident_cell.authorization 条目——responder 只按授权集执行"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

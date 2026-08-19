@@ -24,16 +24,10 @@ class RunnerError(Exception):
 
 
 def _load_models_config(workspace: Path) -> dict[str, dict]:
-    """渲染 config.yaml 的 models 节 → resolver 注册表。
+    """workspace/models.json → resolver 注册表（渲染面机器可读模型表）。"""
+    from agentplatform.adapter.modelresolver import load_models_registry
 
-    config 结构（render/targets.py 生成）：models.<alias> = {provider,
-    model, base_url(env:X), api_key(env:X)}（gateway 节合并 default）。
-    """
-    import yaml
-
-    cfg = yaml.safe_load((workspace / "config.yaml").read_text(encoding="utf-8"))
-    models = (cfg or {}).get("models") or {}
-    return {k: dict(v) for k, v in models.items() if isinstance(v, dict) and "model" in v}
+    return load_models_registry(workspace)
 
 
 def resolve_flow_script(workspace: Path, team_id: str) -> Path:

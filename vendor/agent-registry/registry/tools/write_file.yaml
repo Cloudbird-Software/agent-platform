@@ -1,0 +1,10 @@
+id: write_file
+version: 1.0.0
+kind: builtin
+severity: MEDIUM
+side_effects: [fs_write_repo]                               # v2 词表：写仓库工作区文件（路径范围由 agent 权限再收窄）
+input: {schema_ref: schemas/write-in.json}
+output: {schema_ref: schemas/write-out.json}
+implementation: {repo: openJiuwen-ai/jiuwenswarm, path: builtin/write_file}
+status: approved
+owner: team:stewardship

@@ -2,3 +2,8 @@ logs/
 *.log
 pycache
 __pycache__/
+# 用户数据（渲染产物可重建；账本与凭据是运行时自有——不进 git）
+workspace/
+.env
+.coverage
+dist/

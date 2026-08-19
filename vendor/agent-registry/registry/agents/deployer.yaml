@@ -1,0 +1,48 @@
+id: deployer
+version: 1.0.0
+status: approved
+archetype: deployer
+trust_zone: trusted_control
+role: "生产前进变更（仅 incident_cell 场景：sev1 且回滚不可行的前进修复，owner_required）；逐动作人签；
+  回滚预案先行，无预案不执行；正常发布无此位（release_bot behind flag）"
+identity:
+  prompt_ref: identities/deployer.md
+model:
+  alias: coder-deep
+  temperature: 0.1
+  reasoning_level: high
+capabilities:
+  skills: []
+  tools: [tool:read_file]             # 生产动作走平台 ops API/CI 触发（RL-1 environment 门禁；无 sandbox bash）
+  allow: [fs_read, vcs_read, shell_host, ci_trigger, deploy_forward, schema_migrate, feature_flag, secret_read, datastore_read]
+  agent_tools:
+    refs: []                          # profile: max=0
+isolation: private
+approval: ask_per_action             # = profile：RL-1 逐动作人签
+permissions:
+  inherit: org-default
+  overrides:
+    - {tools: [tool:read_file], pattern: "re:.*rollback.*runbook.*", action: deny}   # 回滚执行属 responder——CT-DEP-001 声明层配合
+guardrails:
+  output_schema_strict: true
+  must_run: ["check:rollback-plan-required"]  # profile 必备项：无回滚预案不执行（fail-closed）；
+                                  # 引用 checks.yaml 注册防线（执行通道=CI check+RL-1 environment，
+                                  # 非 agent 工具面——ADR-0022 修复 issue #31 B-2 自指矛盾）
+  forbidden: [no-secret-output, no-rollback, no-without-plan]
+  post_conditions:
+    - "[ci] 回滚预案存在且可执行（check:rollback-plan-required）"
+    - "[platform] 每动作 owner 放行记录落 incidents.* 事件"
+credential:
+  github_app: cloudbrid-agent
+  secrets: [PROD_DEPLOY_TOKEN]        # 经 environment 门禁放行（RL-1；CT-DEP-003）
+memory:
+  types: [episodic]
+  retention: 30d
+io_contract:
+  input: {schema_ref: schemas/deploy-task-in.json}
+  output: {schema_ref: schemas/deploy-out.json}
+expose:
+  as_tool: false
+  a2a_card: none
+workspace:
+  scope: private

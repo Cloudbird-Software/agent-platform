@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "backlog-entry",
+  "title": "backlog-entry",
+  "description": "backlog 条目契约（team-collaboration interfaces.backlog.entry_schema）。maintenance_wave.trigger 引用的 severity/aging 与 producer_gate 延期判定的 defer_condition 以此为字段真源。",
+  "type": "object",
+  "required": ["id", "source", "severity", "created_at"],
+  "properties": {
+    "id": {"type": "string", "description": "条目唯一标识（issue 编号或 curator 归并号）"},
+    "source": {"type": "string", "enum": ["drift", "ct", "dependabot", "scorecard", "escape", "amendment", "owner"],
+      "description": "多写者来源（open 态由扫描器/提案者填；curator 归并时校验）"},
+    "severity": {"type": "string", "enum": ["security", "high", "normal", "low"],
+      "description": "triage 时 curator 标注；security 级触发 maintenance_wave 并升 owner_ratify（attention-ledger dep_and_schema_owner_ratify）"},
+    "created_at": {"type": "string", "format": "date-time",
+      "description": "入 backlog 时间戳——aging 指标（backlog_aging_p50/p95 与 >30d 触发）的计算基准"},
+    "evidence": {"type": "string", "description": "指标/证据/期望状态引用（issue 链接或 drift 报告锚点）"},
+    "expected_state_ref": {"type": "string", "description": "期望状态引用（governance/expected-state.json 锚点，drift 类必填）"},
+    "disposition": {"type": "string", "enum": ["open", "consumed", "rejected", "deferred"],
+      "description": "producer_gate 处置结果；rejected 须附 reason；deferred 须附 defer_condition（无第四态）"},
+    "reason": {"type": "string", "description": "disposition=rejected 时的驳回理由（必填）"},
+    "defer_condition": {"type": "string", "description": "disposition=deferred 时的机器可判定条件（必填；到期由 curator 机制扫描重排 top-k）"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"disposition": {"const": "rejected"}}},
+      "then": {"required": ["reason"]}
+    },
+    {
+      "if": {"properties": {"disposition": {"const": "deferred"}}},
+      "then": {"required": ["defer_condition"]}
+    }
+  ]
+}

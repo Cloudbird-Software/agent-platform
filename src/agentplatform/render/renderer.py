@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
 
 import agentplatform
 from agentplatform.render.manifest import RenderManifest
-from agentplatform.render.targets import build_config, collect_env_vars
+from agentplatform.render.targets import build_config, build_models_registry, collect_env_vars
 from agentplatform.spec import SpecSnapshot
 
 CONFIG_NAME = "config.yaml"
+MODELS_JSON = "models.json"
+# clean 重渲染的保留集：非渲染产物（用户数据）绝不被清掉
+PRESERVE = {"state", ".env"}
 
 
 def _dump_yaml(doc: dict) -> str:
@@ -36,21 +40,39 @@ class Renderer:
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         if clean:
+
+            def _preserved(p: Path) -> bool:
+                return any(part in PRESERVE for part in p.relative_to(out).parts)
+
             for p in sorted(out.rglob("*"), reverse=True):
-                if p.is_file():
+                if not _preserved(p) and p.is_file():
                     p.unlink()
             for p in sorted(out.rglob("*")):
-                if p.is_dir():
+                if not _preserved(p) and p.is_dir() and not any(p.iterdir()):
                     p.rmdir()
 
         config, notes = build_config(snap, snap.root)
         config_yaml = _dump_yaml(config)
         (out / CONFIG_NAME).write_text(config_yaml, encoding="utf-8")
 
+        models_json = (
+            json.dumps(
+                build_models_registry(snap, notes.get("default_model_alias")),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        (out / MODELS_JSON).write_text(models_json, encoding="utf-8")
+
         env_refs: set[str] = set()
         collect_env_vars(config, env_refs)
+        for value in (json.loads(models_json)["gateway"]).values():
+            if isinstance(value, str) and value.startswith("env:"):
+                env_refs.add(value[4:])
 
-        files = {CONFIG_NAME: _sha(config_yaml)}
+        files = {CONFIG_NAME: _sha(config_yaml), MODELS_JSON: _sha(models_json)}
 
         if include_flows:
             from agentplatform.flow import load_phase_graph

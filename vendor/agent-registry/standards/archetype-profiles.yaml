@@ -1,0 +1,454 @@
+version: 2
+# ============================================================================
+# Archetype Profiles v2 —— 内部构成 + 职责保证 + 信任边界（ADR-0010，取代 v1/ADR-0009）
+#
+# v1→v2 动因（外部审计结论采纳）：
+#   1. 副作用词表过粗 → 5 处声明矛盾 → side-effects.yaml v2 + allow 白名单（fail-closed）
+#   2. checker 既出题又判卷 → 拆 test-author（LLM）+ verifier（机制）
+#   3. operator 前进/回滚对称人签 → 拆 deployer（逐动作人签）/responder（预授权先做后报）
+#   4. structural 全是断言 → 每条挂 enforced_by + control_test（adversary 定期执行）
+#   5. LLM/机制二分：能确定的用代码 → 6 个机制原型（无 LLM 主体，至多薄 llm_assist）
+#   6. 注入防护 → trust_zones；researcher.agent_tools=0；判决证据仅仓内固定版本
+#
+# 读法（AI）:
+#   mission/internal_flow/typical  同 v1（流程骨架/典型构成——指导性）
+#   enforced_by 的 check:*  = 平台仓 CI required check id（CI-Workflows 实现；未实装的属二期，activation 见 team-collaboration PART 5）
+#   trust_zone      untrusted_ingest（可触外部文本）| trusted_control（不可）
+#   capabilities.allow   副作用白名单（side-effects.yaml v2 词表；未列出即禁止）
+#   capabilities.agent_tools {allow: 原型白名单, max: 数量上限}（白名单，v1 黑名单废弃）
+#   isolation   private（独立工作区）| hermetic（密闭：连共享记忆也无关）| team
+#   approval    auto | ask_risky | ask_per_action | async_notify（与 isolation 正交；v1 strict 双义拆分）
+#   independence.distinct_model_family_from   模型族级隔离（models.yaml family；别名级太弱）
+#   duty_assurance.structural  每条 = {claim, enforced_by, control_test}——
+#                              control_test 是 adversary 执行的控制测试 id（control-tests.yaml）
+#
+# 机器强制（validate.py）：
+#   allow ⊆ 词表；agent 工具副作用 ⊆ allow；agent_tools 白名单+上限；
+#   isolation/approval/trust_zone 必须与 profile 一致；structural 三字段非空；
+#   independence 族级比对；requires 点路径非空
+# ============================================================================
+trust_zones:
+  untrusted_ingest: [researcher]        # 仅这些原型可读外部文本（net_read）；产出必须 schema+provenance 过界
+  trusted_control: [builder, planner, test-author, judge, curator, adversary, deployer, responder]
+  rules:
+    - untrusted 内容只能以 schema 化、带 provenance、标注 source_class(internal_repo|external_web) 的形式跨越边界
+    - external_web 结论不得作为判决或政策的规范性依据（verifier/judge 消费面禁止）
+    - "外部读取→写类动作 同 run 序列打标进异常检测（metrics-aggregator）"
+    - 判决证据只允许仓内、已固定版本的材料（evidence-pack artifact 除外，其本身产自平台）
+
+profiles:
+
+  # ════════════════════════ LLM 原型（9）════════════════════════
+
+  builder:
+    kind: llm
+    trust_zone: trusted_control
+    mission: 把工作卡变成可交付实现；写 tests/unit/**（设计工具），永不写 tests/acceptance/**（判决依据）
+    internal_flow:
+      1. 读工作卡（含 owner 已批准的验收示例与测试规格），不明处经 researcher 查证，不臆测
+      2. 红-绿-重构（skill:tdd-loop）：unit 测试描述设计，实现刚好通过；acceptance 树已冻结不动
+      3. 交付前 must_run 全绿
+      4. 提 PR 附卡号；verdict 等待 verifier 机制判决，不自行合并
+    typical: {model_tier: fast/coder, memory: [episodic 短期], workspace: team 共享区写}
+    capabilities:
+      allow: [fs_read, fs_write_sandbox, fs_write_repo, vcs_read, vcs_branch_push, vcs_pr_open, shell_sandbox]
+      agent_tools: {allow: [researcher], max: 2}
+    isolation: team
+    approval: auto
+    duty_assurance:
+      structural:
+        - claim: "acceptance 测试作者权不在 builder（tests/acceptance/** 不可写）"
+          enforced_by: [token-path-scope, "check:pr-identity-path-matrix（身份×路径 required check）"]
+          control_test: CT-BLD-001
+        - claim: "无合并权（vcs_merge 不在 allow；合并属 integrator 机制）"
+          enforced_by: [capability-whitelist(validate), org-ruleset]
+          control_test: CT-BLD-002
+        - claim: "实现开始后 acceptance 树冻结（test_tree_sha 记录在卡）"
+          enforced_by: ["check:test-tree-freeze"]
+          control_test: CT-TA-003
+        - claim: "每步工具调用由平台网关带外落事件流"
+          enforced_by: [event-sidecar(platform-emitted)]
+          control_test: CT-EVT-001
+      verified_by:
+        - verifier 判决（机制，非同脑问题不存在）
+        - mutation score 于 test_accept（测试杀不死变异=测试无效，归因 test-author）
+        - hidden holdout 留出集（二期：独立仓，失败只回报断言 id）
+        - escape review 归因 impl_gap 可追溯到卡与 PR
+    requires: [guardrails.must_run]
+
+  planner:
+    kind: llm
+    trust_zone: trusted_control
+    mission: 工作源头——意图→波次计划+工作卡+测试规格；只写计划产物；每卡必含 owner 已批准的验收示例引用
+    internal_flow:
+      1. 解析 intent（interface-gateway 产出），识别约束与不变量（policy/*.yaml）
+      2. 现状调研经 researcher；外部结论仅作背景，不作规范依据
+      3. 产验收示例 5~15 条（输入→期望输出，owner 30 秒可读）→ 送 owner 批准（intent ratification）
+      4. 波次分解（依赖/风险排序，单波次可验证可回滚）
+      5. 产工作卡：卡头含 acceptance_refs + test_tree_sha 计划；卡体只述"验证什么"不述实现
+      6. 自检（wave-plan schema）后交 owner 批准开工——计划评审不再由 checker 承担（P0-12）
+    typical: {model_tier: deep/旗舰, memory: [semantic 项目认知], workspace: 计划目录 plans/cards/specs}
+    capabilities:
+      allow: [fs_read, fs_write_repo, vcs_read, datastore_read, datastore_write, memory_read, memory_write]
+      agent_tools: {allow: [researcher], max: 2}
+    io_guarantees:                    # ADR-0022：输出契约语义约束（validate 强制——防 schema 被换掉致契约链断裂）
+      output_must_have: [wave_id, cards, contracts_ref, trace_id]   # cards=工作卡数组（card.trace_id→task-in 链路闭合）
+    isolation: private
+    approval: auto
+    duty_assurance:
+      structural:
+        - claim: "写路径限 plans/|cards/|specs/|contracts/ 顶层（无实现路径；contracts/=波次跨卡契约，planner 为 single_writer）"
+          enforced_by: [token-path-scope, "check:pr-identity-path-matrix"]
+          control_test: CT-PLN-001
+        - claim: "无 git 提交权（vcs_* 写项不在 allow；计划经数据层+归档流转）"
+          enforced_by: [capability-whitelist(validate)]
+          control_test: CT-PLN-002
+        - claim: "intent.ratified_by==owner 才可开卡（未批准验收示例的意图不得进入工作流）"
+          enforced_by: ["check:intent-ratified（scheduler 开卡前置）"]
+          control_test: CT-PLN-003
+      verified_by:
+        - 计划结构由代码校验（schema/验收引用齐备性——validate，非 agent 判断）
+        - owner 批准验收示例（人审点前移到意图保真，最高杠杆）
+        - adversary premortem（可选：失败模式清单，不出 pass/fail）
+        - escape review 归因 spec_gap 时回溯卡与意图
+    requires: [guardrails.output_schema_strict, io_contract.output.schema_ref]
+
+  test-author:                      # v1 checker 拆分：只出题，不判卷
+    kind: llm
+    trust_zone: trusted_control
+    mission: 把规格转译为 acceptance 测试（tests/acceptance/**）；维护测试树；不判卷、不写实现、不产 verdict
+    internal_flow:
+      1. 读工作卡与测试规格（hermetic：不共享 builder 草稿记忆）
+      2. 实现开始前把规格转译为测试并冻结（test_tree_sha 回写卡）
+      3. 判卷阶段零介入；仅当卡变更（新规格）时经新卡修改测试
+      4. 减弱型变更（删测试/删断言/放宽阈值/加 skip）= 特权变更：需新卡+owner 批，触发 test_weakening 事件
+    typical: {model_tier: 别名与 builder 异族, memory: [semantic 判例], workspace: private}
+    capabilities:
+      allow: [fs_read, fs_write_sandbox, fs_write_repo, vcs_read, vcs_branch_push, vcs_pr_open, shell_sandbox, datastore_read]
+      agent_tools: {allow: [], max: 0}
+    isolation: hermetic
+    approval: auto
+    independence: {distinct_model_family_from: [builder]}
+    duty_assurance:
+      structural:
+        - claim: "写路径限 tests/**（实现路径不可写）"
+          enforced_by: [token-path-scope, "check:pr-identity-path-matrix"]
+          control_test: CT-TA-001
+        - claim: "模型族 ≠ builder（family 级，非别名级）"
+          enforced_by: [validate(independence), models-family]
+          control_test: CT-TA-002
+        - claim: "不产 verdict（io_contract 无判决输出；判决属 verifier 机制）"
+          enforced_by: [output-schema]
+          control_test: CT-TA-004
+      verified_by:
+        - mutation score 于 test_accept（其测试质量的裁判是变异，不是自己）
+        - escape review 归因 test_gap 可追溯到测试作者
+        - verifier 机制对冻结树运行——出题人无法在判卷时改题
+    requires: [io_contract.output.schema_ref]
+
+  judge:
+    kind: llm
+    trust_zone: trusted_control
+    mission: 域内分歧仲裁（评审分歧/规格歧义/方法论选择）；机械可判的（flaky 重跑）不受理；判例非规范
+    internal_flow:
+      1. 受理：核对管辖依据（授权域枚举——仅 owner 可改）；越域 → 判"上升人类"附原因
+      2. 机械预筛：flaky 类先走 evidence-pack 重跑（N 次 M 失败 → 自动判 flaky 隔离+开卡），机器能判的不受理
+      3. 摘录双方主张（结构化）；依据检索只读仓内固定 ref 材料 + evidence-pack artifact
+      4. 判决：decision+rationale+jurisdiction_basis+reversible_by=owner，落 decision_made 事件
+      5. 判例仅检索辅助；同类争议 ≥3 次 → 产 policy_gap findings 交 planner 开卡（判例不得事实立法）
+    typical:
+      model_tier: 与争议双方异族
+      memory: []                    # 判例唯一入口=case_law/ artifact 只读——per_dispute 判后销毁，无跨实例私有判例记忆
+      workspace: private
+    capabilities:
+      allow: [fs_read, vcs_read, datastore_read]
+      agent_tools: {allow: [], max: 0}
+    isolation: hermetic
+    approval: auto
+    independence: {distinct_model_family_from: [builder, test-author]}
+    duty_assurance:
+      structural:
+        - claim: "无任何 datastore/fs 写路径与网络（判决以 decision_made 自述事件经平台通道产出——无写凭据；case_law 入库执行者=curator）"
+          enforced_by: [capability-whitelist(validate), tool-surface]
+          control_test: CT-JDG-001
+        - claim: "不接受任何 agent 转述/喂结论（agent_tools=0）"
+          enforced_by: [validate]
+          control_test: CT-JDG-002
+        - claim: "管辖域枚举仅 owner 可改"
+          enforced_by: [owner-only-path(CODEOWNERS)]
+          control_test: CT-JDG-003
+        - claim: "判例 normative=false（未被提升为 policy/ADR 前无规范力）"
+          enforced_by: ["check:precedent-non-normative"]
+          control_test: CT-JDG-004
+      verified_by:
+        - evidence-pack 不可变 artifact（证据不由争议方转述）
+        - 判决含双方主张摘要，可追溯审计
+        - owner 可推翻（reversible_by）
+        - 越域判决被审计（jurisdiction_basis 对照授权域）
+    requires: [io_contract.output.schema_ref]
+
+  curator:
+    kind: llm
+    trust_zone: trusted_control
+    mission: 治理资产保管——归档审核、漂移响应、skill/ADR 提炼；对 standards/validate 的修改只有提案权
+    internal_flow:
+      1. 归档审核：ephemeral 团队 handoff 资产，合格入库（PR），不合格退回
+      2. 漂移响应：消费 drift 报告按 flows.governance_change 分级处置
+      3. 知识沉淀：recurrent 经验 → skill-extract；关键决策 → ADR；同类判例 ≥3 → 提议 policy
+      4. 一切变更走 PR（C1 路径 owner 批）；治理之治理路径（standards/validator/CODEOWNERS）owner-only
+    typical: {model_tier: deep, memory: [semantic 治理知识+ADR 索引], workspace: private}
+    capabilities:
+      allow: [fs_read, fs_write_sandbox, fs_write_repo, vcs_read, vcs_branch_push, vcs_pr_open, shell_sandbox, datastore_read, datastore_write, memory_read, memory_write]
+      agent_tools: {allow: [researcher], max: 1}
+    isolation: private
+    approval: auto
+    duty_assurance:
+      structural:
+        - claim: "无 vcs_admin（治理之治理只有提案权；admin 全系统唯 owner）"
+          enforced_by: [capability-whitelist(validate), platform-role]
+          control_test: CT-CUR-001
+        - claim: "standards/**、scripts/validate.py、CODEOWNERS 的 PR 必须 owner 批（CODEOWNERS+ruleset）"
+          enforced_by: [owner-only-path(CODEOWNERS), ruleset-code-owner-review]
+          control_test: CT-CUR-002
+        - claim: "C1 变更无 ADR 不合并"
+          enforced_by: ["check:adr-required"]
+          control_test: CT-CUR-003
+      verified_by:
+        - owner 周审 drift 报告与治理 PR
+        - adversary 独立执行控制测试（curator 无法阻止）
+    requires: [guardrails.must_run]
+
+  adversary:                        # 新增：治理层 chaos engineering
+    kind: llm
+    trust_zone: trusted_control
+    mission: 把全部 structural claim 从断言变成被持续验证的事实；对新卡做 premortem
+    internal_flow:
+      1. 从 control-tests.yaml 取清单，逐条以目标原型真实凭据尝试越权，期望"失败"
+         （凭据=平台签发的一次性目标原型凭据副本，见 credential.impersonation——ADR-0022）
+      2. 期望失败却成功 → 写 P0 finding + 发 freeze 建议标志（平台执行冻结——adversary
+         自身无冻结凭据，与 workflows/red-adversary.steps.md 第 5 步一致）+ 通知 owner
+      3. premortem：对新卡/新计划出失败模式清单（不出 pass/fail 判决）
+      4. findings 只进数据层 findings/**，不直接开 PR、不直接改事件
+    typical: {model_tier: deep, memory: [episodic 攻击史], workspace: 一次性沙箱}
+    capabilities:
+      allow: [fs_read, fs_write_sandbox, vcs_read, shell_sandbox, datastore_read, datastore_write]
+      agent_tools: {allow: [], max: 0}
+    isolation: hermetic
+    approval: auto
+    duty_assurance:
+      structural:
+        - claim: "只在一次性沙箱执行，用完即毁（不持有长期凭据）"
+          enforced_by: [sandbox-ephemeral]
+          control_test: CT-ADV-001
+        - claim: "datastore_write 限 findings/** 集合"
+          enforced_by: [token-collection-scope]
+          control_test: CT-ADV-002
+        - claim: "control-tests.yaml 与 profiles structural 一一对应（缺测试即 drift）"
+          enforced_by: [validate(ct-coverage)]
+          control_test: CT-ADV-003
+      verified_by:
+        - 控制测试结果本身落数据层（可对账）
+        - owner 周审 adversary 报告（与 drift 报告并列）
+    requires: [io_contract.output.schema_ref]
+
+  researcher:
+    kind: llm
+    trust_zone: untrusted_ingest
+    mission: 检索即工具——找代码/翻文档/查外部资料；上下文经济节点：全文自消化，只返回结论+引用+置信度
+    internal_flow:
+      1. 接问题（io_contract 输入），缓存命中判断（semantic）
+      2. 多源检索（仓内/网络），交叉验证；无第二来源 → confidence=low
+      3. "过界封装：findings = {conclusions, sources[], source_class(internal_repo|external_web), confidence}——schema 化+provenance"
+      4. 体积受 io_contract 约束（调用方上下文不被撑爆）
+    typical: {model_tier: fast, memory: [semantic 检索缓存], workspace: private}
+    capabilities:
+      allow: [fs_read, vcs_read, net_read, datastore_read, memory_read, memory_write]
+      agent_tools: {allow: [], max: 0}   # 反向也禁：防注入经它洗进特权节点
+    isolation: private
+    approval: auto
+    duty_assurance:
+      structural:
+        - claim: "无任何写路径（检索不可能污染被检索对象）"
+          enforced_by: [capability-whitelist(validate)]
+          control_test: CT-RES-001
+        - claim: "findings 必须 schema 化且 sources 非空且带 source_class（无引用结论无法通过输出校验）"
+          enforced_by: [output-schema]
+          control_test: CT-RES-002
+        - claim: "不可被 agent 调用方追加指令二次加工（输出即封板）"
+          enforced_by: [io-contract(imperative-strip best-effort)]
+          control_test: CT-RES-003
+      verified_by:
+        - 引用可回溯抽查（调用方/审计抽 source）
+        - 缓存命中率/新鲜度进指标
+        - 逃逸归因含外部来源时查 provenance
+    requires: [io_contract.output.schema_ref, expose.as_tool]
+
+  deployer:                         # v1 operator 拆分：前进变更
+    kind: llm
+    trust_zone: trusted_control
+    mission: 生产前进变更——部署/迁移/扩容；逐动作人签；回滚预案先行
+    internal_flow:
+      1. 领部署卡（planner 产+owner 批），核对检查单（环境/审批/窗口）
+      2. 附回滚预案（无预案不执行，fail-closed）
+      3. 逐动作执行，人类逐动作放行（RL-1）
+      4. smoke + canary + 指标观察；异常 → 转 responder（回滚不属于 deployer）
+    typical: {model_tier: 中档, memory: [episodic 操作史], workspace: private}
+    capabilities:
+      allow: [fs_read, vcs_read, shell_host, ci_trigger, deploy_forward, schema_migrate, feature_flag, secret_read, datastore_read]
+      agent_tools: {allow: [], max: 0}
+    isolation: private
+    approval: ask_per_action
+    duty_assurance:
+      structural:
+        - claim: "无回滚权（deploy_reverse 不在 allow——回滚走 responder 预授权，MTTR 不等人签）"
+          enforced_by: [capability-whitelist(validate)]
+          control_test: CT-DEP-001
+        - claim: "卡无回滚预案不执行"
+          enforced_by: ["check:rollback-plan-required"]
+          control_test: CT-DEP-002
+        - claim: "生产凭据经 environment 审批（RL-1 平台级）"
+          enforced_by: [github-environment(required_reviewers), oidc-scope]
+          control_test: CT-DEP-003
+      verified_by:
+        - smoke/canary/升级测试（R-01..R-05）客观判定
+        - 回滚演练定期验证预案真实性
+    requires: [guardrails.must_run]
+
+  responder:                        # v1 operator 拆分：恢复动作
+    kind: llm
+    trust_zone: trusted_control
+    mission: 预授权恢复——回滚/降级/关开关/冻结写入；先做后报（async_notify），全留痕，24h 补 retro
+    internal_flow:
+      1. 接 incident 信号（告警/deployer 移交/owner 呼叫）——severity 分类由机制完成（incident_cell.severity_classified_by），responder 只按授权集执行
+      2. 从预授权动作集内选择最小恢复动作执行（白名单外 → 只能上报，不得自扩）
+      3. 即时通知 owner + 事件全留痕（先做后报的法律逻辑：恢复类动作延迟成本 > 误恢复成本）
+      4. 24h 内补事件详情与 retro（curator 追踪为带期限的债）
+    typical: {model_tier: fast, memory: [episodic 事故史], workspace: private}
+    capabilities:
+      allow: [fs_read, vcs_read, deploy_reverse, feature_flag, failover, scale, data_freeze, ci_trigger, datastore_read]
+                                     # 无 datastore_write：全部产出（事件/报告/retro）经平台通道落流（event_integrity）——无消费者授权不发
+      agent_tools: {allow: [], max: 0}
+    isolation: private
+    approval: async_notify
+    duty_assurance:
+      structural:
+        - claim: "动作集白名单枚举（deploy_forward/schema_migrate/secret_read 不在 allow——只能恢复，不能前进）"
+          enforced_by: [capability-whitelist(validate)]
+          control_test: CT-RSP-001
+        - claim: "24h retro 债由 curator 追踪（逾期进 drift 报告）"
+          enforced_by: ["check:retro-debt-aging"]
+          control_test: CT-RSP-002
+      verified_by:
+        - MTTR/误恢复率指标（metrics-aggregator）
+        - 每次预授权动作的事后 retro 审计
+    requires: [io_contract.output.schema_ref]
+
+  # ════════════════════════ 机制原型（6，无 LLM 主体）════════════════════════
+  # 原则：能确定的用代码。LLM 只做语义分类/叙述（llm_assist），绝无裁量权（无重试、无合并、无判决解释权）。
+
+  verifier:                         # v1 checker 的判卷半边 → 机制
+    kind: mechanism
+    implementation: ci-required-check（跑冻结测试树→逐断言 pass/fail）
+    mission: 判卷引擎——对 test_tree_sha 指定的冻结树运行，产 verdict（required status check）
+    llm_assist: none                # 纯机制：判决=测试退出码，无 LLM 参与
+    capabilities: {allow: [fs_read, vcs_read, shell_sandbox, datastore_write], agent_tools: {allow: [], max: 0}}
+    evidence_policy:
+      tier_order: [deterministic_gate, property_metamorphic, golden_contract, llm_verdict, human]
+      llm_only_verdict_allowed_for: [doc, logic_low_risk]   # 高风险卡禁止纯 LLM 判决
+    structural_notes: 判决输入=冻结树+被验 PR；无网络；hidden holdout 执行点（二期独立仓，失败只回断言 id）
+
+  integrator:                       # P0-6：合并=状态函数
+    kind: mechanism
+    implementation: auto-merge/merge-queue（GitHub native）
+    mission: 合并——required checks 全绿 + verifier verdict 通过 + 卡号 metadata 规则满足 → 机械触发；无任何 agent 持有 vcs_merge
+    llm_assist: none
+    capabilities: {allow: [vcs_merge], agent_tools: {allow: [], max: 0}}
+    scope: 产品仓 logic/dep/schema 类变更（dep/schema 须 owner 批后方可自动合并）；治理仓（C1/C2）永远 owner 手合
+
+  evidence-pack:                    # P0-7：中立证据机器
+    kind: mechanism
+    implementation: ci-job（争议触发）
+    mission: 争议证据采集——重跑争议测试 N 次、采日志/环境/哈希 → 不可变 artifact（judge 只读它）
+    llm_assist: none
+    capabilities: {allow: [fs_read, vcs_read, shell_sandbox, datastore_write], agent_tools: {allow: [], max: 0}}
+    flaky_rule: {reruns: N, fail_threshold: M, verdict: "N 次 M 失败 → flaky → 自动隔离+开卡（不经 judge）"}
+
+  scheduler:                        # v1 orchestrator 的确定性半边 → 机制
+    kind: mechanism
+    implementation: 状态机（openjiuwen 编排层，声明式配置）
+    mission: 调度——载入已批计划、按卡分派、超时/预算熔断（同参重试按卡 risk_class 上限，再失败回 planner 重规划；无 LLM 裁量）
+    llm_assist: {stage: failure-triage, alias: coder-fast, note: "仅失败归类与摘要，无重试/升级裁量"}
+    capabilities: {allow: [fs_read, vcs_read, datastore_read, datastore_write, ci_trigger], agent_tools: {allow: [], max: 0}}
+    budget_enforcement: {per_card: {tokens, wall_clock, "retries: 按 card.risk_class（默认 1；high ≤2）", usd}, enforced_by: gateway-virtual-key + scheduler, on_exceed: fail-closed 回 planner}
+
+  interface-gateway:                # v1 interface 的管道半边 → 机制
+    kind: mechanism
+    implementation: 网关服务（多通道接入/脱敏/trace_id 注入/intent schema 校验）
+    mission: 意图入口——接收人类输入→脱敏→结构化 intent→路由 planner（新工作）/scheduler（在途查询）
+    llm_assist: {stage: nl-to-intent, alias: coder-deep, note: "仅 NL→intent 解析（薄）；解析产物必须过 intent schema 校验"}
+    capabilities: {allow: [fs_read, datastore_read, datastore_write, memory_read, memory_write], agent_tools: {allow: [], max: 0}}
+
+  metrics-aggregator:               # v1 observer 的聚合半边 → 机制
+    kind: mechanism
+    implementation: 代码/SQL over 事件流（可复算）
+    mission: 指标聚合与异常检测——run/token/失败率/拦截率/escape_rate/MTTR；结论只进数据层
+    llm_assist: {stage: anomaly-narrative, alias: coder-fast, note: "仅异常叙述（数字算出来，人话写出来）；聚合本身无 LLM，保证可复算"}
+    capabilities: {allow: [datastore_read, datastore_write, fs_read], agent_tools: {allow: [], max: 0}}
+
+  # ── 以下四个机制原型由 team-collaboration services 声明为服务，在此补齐信任声明 ──
+
+  card-gate:                        # 卡批准闸（services.card_gate 的原型）
+    kind: mechanism
+    implementation: 声明校验器（requires 七项全绿才输出 cards.ratified；纯代码）
+    mission: 卡批准——schema/capability_tags/DAG/testability_signoff/knowledge 处置/contracts/test_tree_sha 逐项机械检查
+    llm_assist: none
+    capabilities: {allow: [datastore_read, datastore_write], agent_tools: {allow: [], max: 0}}
+    structural_notes: 唯一输出事件=cards.ratified；无任何 LLM 裁量（批准不是判断是合规检查）
+
+  release-bot:                      # 发布执行者（services.release_bot 的原型）——全系统唯一持部署权的机制
+    kind: mechanism
+    implementation: ci-pipeline（PR merged 触发：部署 behind flag → 写 release_record）
+    mission: 发布——合并后自动部署 behind flag 并写 release_record（rollback_safe/rollback_window/flag_ids）
+    llm_assist: none
+    capabilities: {allow: [deploy_forward, feature_flag, ci_trigger, datastore_read, datastore_write, vcs_read], agent_tools: {allow: [], max: 0}}
+    stall_escalation: 流水线停滞超时 → escalation（队内无人能做发布，不能等死）
+    duty_assurance:
+      structural:
+        - claim: "只部署 behind flag，永不开启 flag（开启=owner 不可委派动作）"
+          enforced_by: [pipeline-acl, "check:flag-enable-owner-only"]
+          control_test: CT-RLB-001
+    structural_notes: 部署必写 release_record（rollback_safe 由部署内容机械判定）
+
+  knowledge-retrieval:              # 知识检索（services.knowledge_retrieval 的原型）
+    kind: mechanism
+    implementation: 确定性检索（按 capability_tags/争议关键字查 ADR/skill/case_law 索引，top-5 候选）
+    mission: 候选供给——防 planner/judge 自证"无相关知识"（候选由机制出，处置由人/agent 出）
+    llm_assist: none
+    capabilities: {allow: [fs_read, vcs_read, datastore_read, datastore_write, memory_read], agent_tools: {allow: [], max: 0}}
+    structural_notes: 只产候选列表不做判断；检索结果带 version_read（陈读不得作判决依据）
+
+  drift-check:                      # 治理漂移检测（services.drift_check 的原型）
+    kind: mechanism
+    implementation: ".github/governance/drift-check.sh（平台仓定时任务）"
+    mission: 漂移报告——§8 非 PR 直推检出、§9 admin 唯一性对账、治理资产与实际状态偏差
+    llm_assist: none
+    capabilities: {allow: [fs_read, vcs_read, datastore_read, datastore_write], agent_tools: {allow: [], max: 0}}
+    structural_notes: 报告只进数据层+owner 周审；stewardship 消费处置（curator 无权阻止其运行）
+
+  tui:                              # owner 直读视图与控制面板（services.tui 的原型——ADR-0021 补齐）
+    kind: mechanism
+    implementation: 事件流只读投影（observability.views 六视图物化 + 控制动词转发）
+    mission: 可视化与控制入站——视图=确定性投影（read_only），控制动词=转发平台通道落事件（TUI 无数据层写凭据）
+    llm_assist: none
+    capabilities: {allow: [fs_read, datastore_read], agent_tools: {allow: [], max: 0}}
+    structural_notes: 事件流唯一事实源；写路径为零（read_only 原则——observability 同模式）
+
+  # ════════════════════════ 伪原型（不实例化为 agent）════════════════════════
+
+  owner:
+    kind: principal
+    mission: 信任根——vcs_admin 唯一持有者；验收示例批准（intent ratification）；管辖域枚举唯一修改者；escape review 受理；一切判决可被推翻（reversible_by）
+    holdings: [vcs_admin, intent.ratify, judge.jurisdiction, C1/C2 merge, production environment approval]
+    invariants:
+      - org 全部仓库 admin 数量 == 1 且为 owner（drift-check §9 对账）
+      - owner 亦走 PR（破玻璃直推必被 drift-check §8 曝光，24h 回填）

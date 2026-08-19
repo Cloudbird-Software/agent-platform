@@ -1,0 +1,37 @@
+# LiteLLM 网关配置（ADR-0002：agent 侧只认 alias，解析只在网关侧）。
+#
+# 部署时把 provider 凭据注入环境（OPENAI_API_BASE / OPENAI_API_KEY），
+# 本文件永不出现明文密钥。alias 列表 = vendor/agent-registry/registry/models.yaml。
+# 换 provider：改 api_base + model 前缀（anthropic/*、dashscope/* …）。
+model_list:
+  - model_name: coder-fast
+    litellm_params:
+      model: openai/coder-fast
+      api_base: ${OPENAI_API_BASE}
+      api_key: ${OPENAI_API_KEY}
+  - model_name: coder-deep
+    litellm_params:
+      model: openai/coder-deep
+      api_base: ${OPENAI_API_BASE}
+      api_key: ${OPENAI_API_KEY}
+  - model_name: reviewer
+    litellm_params:
+      model: openai/reviewer
+      api_base: ${OPENAI_API_BASE}
+      api_key: ${OPENAI_API_KEY}
+  - model_name: judge-deep
+    litellm_params:
+      model: openai/judge-deep
+      api_base: ${OPENAI_API_BASE}
+      api_key: ${OPENAI_API_KEY}
+  - model_name: embed-default
+    litellm_params:
+      model: openai/embed-default
+      api_base: ${OPENAI_API_BASE}
+      api_key: ${OPENAI_API_KEY}
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: ${LITELLM_MASTER_KEY}

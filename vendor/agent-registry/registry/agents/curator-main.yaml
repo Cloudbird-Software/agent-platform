@@ -1,0 +1,47 @@
+id: curator-main
+version: 1.0.0
+status: approved
+archetype: curator
+trust_zone: trusted_control
+role: "治理资产保管：归档审核/漂移响应/ADR 与 skill 提炼；对 standards/** 与 validate.py 只有提案权（owner-only 路径）"
+identity:
+  prompt_ref: identities/curator-main.md
+model:
+  alias: coder-deep
+  temperature: 0.2
+  reasoning_level: high
+capabilities:
+  skills: [skill:code-review-fix]
+  tools: [tool:read_file, tool:write_file, tool:gitcode-pr, tool:bash]
+  allow: [fs_read, fs_write_sandbox, fs_write_repo, vcs_read, vcs_branch_push, vcs_pr_open, shell_sandbox, datastore_read, datastore_write, memory_read, memory_write]
+  agent_tools:
+    refs: [agent:researcher-code]     # 治理检索（≤1，profile）
+isolation: private
+approval: auto
+permissions:
+  inherit: org-default
+  overrides:
+    - {tools: [tool:gitcode-pr], pattern: "re:.*((ruleset)|(secret)|(CODEOWNERS)|(/settings/)).*", action: deny}   # 无 vcs_admin（CT-CUR-001）
+    - {tools: [tool:bash], pattern: "gh api *rulesets*", action: deny}
+    - {tools: [tool:write_file], pattern: "standards/**", action: deny}       # "只有提案权"的 registry 层表达
+    - {tools: [tool:write_file], pattern: "scripts/validate.py", action: deny}   # （identities/curator-main.md——
+    - {tools: [tool:write_file], pattern: "CODEOWNERS", action: deny}          # 直写被拒，变更走 PR+owner 批，
+                                                                                # ADR-0022 修复 issue #31 B-6）
+memory:
+  types: [semantic]
+  retention: 365d
+guardrails:
+  output_schema_strict: true
+  must_run: ["python3 scripts/validate.py"]
+  forbidden: [no-secret-output, no-bypass-gate]
+  post_conditions:
+    - "[ci] C1 变更必附 ADR（check:adr-required）"
+    - "[llm] 归档审核结论附资产引用与不合格理由"
+io_contract:
+  input: {schema_ref: schemas/handoff-in.json}
+  output: {schema_ref: schemas/curation-out.json}
+expose:
+  as_tool: true
+  a2a_card: none
+workspace:
+  scope: private
