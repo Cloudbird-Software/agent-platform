@@ -46,6 +46,7 @@ ignore = ["SIM108", "RUF001", "RUF002", "RUF003"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+asyncio_mode = "auto"
 markers = [
     "upstream: 需要 openjiuwen/jiuwenswarm 安装（docker/本地完整部署）",
     "adversarial: 对抗性测试（篡改声明/越权/预算绕过/事件回改）",
@@ -53,3 +54,8 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/agentplatform"]
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.4.0",
+]
