@@ -1,0 +1,60 @@
+id: arbiter
+version: 2.1.0
+status: approved                        # services.judge.members 绑定须 approved（AGENTS.md 引用规则）
+archetype: judge
+trust_zone: trusted_control
+role: judge 服务成员（per_dispute：一次仲裁一实例，判后销毁；activation：僵持累计>=2 才激活，此前 escalation 直达
+  owner）：域内分歧仲裁；机械可判不受理；判例非规范
+identity:
+  prompt_ref: identities/arbiter.md
+model:
+  alias: judge-deep                     # family=sovereign ≠ builder(flash)/test-author(flagship)——族级独立性
+  temperature: 0.1
+  reasoning_level: high
+capabilities:
+  skills: []
+  tools:
+  - tool:read_file
+  allow:
+  - fs_read
+  - vcs_read
+  - datastore_read
+  agent_tools:
+    refs: []
+isolation: hermetic
+approval: auto
+independence:
+  distinct_model_family_from:
+  - builder
+  - test-author
+workflow:
+  mode: fixed
+  steps_ref: workflows/arbiter.steps.md   # ADR-0022 修复 issue #31 B-7：fixed 必绑固定流程
+permissions:
+  inherit: org-default
+  overrides:
+  - tools:
+    - tool:read_file
+    pattern: '*'
+    action: allow
+memory:
+  types: []                             # 判例唯一入口=case_law/ artifact 只读——per_dispute 判后销毁，无跨实例私有判例记忆
+  retention: 0d
+guardrails:
+  output_schema_strict: true
+  forbidden:
+  - no-secret-output
+  - no-bypass-gate
+  post_conditions:
+  - '[llm] 每份判决注明管辖依据（团队授权域条目），越域即改判''上升人类'''
+  - '[platform] 判决以 decision_made 自述事件产出（平台事件通道；无 datastore 写凭据，CT-JDG-001）'
+io_contract:
+  input:
+    schema_ref: schemas/dispute-in.json
+  output:
+    schema_ref: schemas/verdict.json
+expose:
+  as_tool: false
+  a2a_card: none
+workspace:
+  scope: private

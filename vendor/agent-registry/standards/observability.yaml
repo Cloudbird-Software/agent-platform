@@ -1,0 +1,73 @@
+version: 1
+# ============================================================================
+# Observability —— 可观测性（ADR-0014 PR-B）
+# ============================================================================
+# 前提：事件流已是唯一事实源（append-only + 哈希链 + trace_id 贯穿
+# intent→卡→run→判决→事件——flows.yaml event_integrity）。
+# 因此可观测性【不是新建设施】，是同一数据流的两个读端投影：
+#   读端 1 = 人直读（TUI 视图）
+#   读端 2 = agent 代读（ask 意图 → researcher as_tool 检索）
+# 控制动词（pause/resume/abort）是同一接口的写端——但写的是事件不是数据。
+#
+# 一体两面原则：可观测（读）与控制（写）共用同一事件流与同一入口
+# （TUI/interface-gateway）——分开建设会出现"看得到的状态控不了、控了的动作看不到"。
+# ============================================================================
+
+principles:
+  - read_only: 一切视图只读（TUI/查询接口无数据层写凭据——写=落事件，经平台通道；
+      与 channels.semantics 同源：write=发布事件，非 datastore 直写）
+  - attention_first: 视图按注意力组织，不按系统内部结构组织——默认页是
+      "等你决策的队列"，不是调试器式日志流
+  - provenance: 一切回答/视图数据附 trace_id 或 card_id 引用（无引用的回答=断言，
+      禁止——同 findings sources minItems:1 原则）
+
+# ---- 读端 1：TUI 视图目录（人直读；视图=事件流的物化查询，声明即规格）----
+views:
+  attention:                          # 默认页：系统在等我什么
+    query: "owner 阻塞点队列（attention-ledger 全量）+ 各项 SLA 倒计时 + 默认动作预览"
+    why: owner 打开 TUI 的第一问是"需要我吗"，不是"系统在干嘛"
+  now:                                # 活跃团队与卡
+    query: "active teams + in-flight cards + 各卡当前相位（team-collaboration flow.phases）"
+  wave:                               # 波次相位图
+    query: "波次相位图上每张卡的位置 + 相位停留时长 + 阻塞在哪（等判决/等预算/等依赖）"
+  budget:                             # 预算燃烧
+    query: "团队包络/卡预算的已耗/剩余 + 熔断距离 + overhead_pool 余量"
+  backlog:                            # 维护回路健康度
+    query: "backlog 堆积 + aging p50/p95 + deferred 条目及其到期条件（flows maintain_loop）"
+  trace:                              # 全链时间线（输入 trace_id 或 card_id）
+    query: "intent→卡→run→判决→合并→发布 全事件时间线（唯一审计入口；哈希链可验证）"
+
+# ---- log 分级：log 不是独立产物，是事件流的受众投影 ----
+logs:
+  audience_owner:                     # 默认：为什么/卡在哪/花了多少（决策所需最小集）
+    content: [阻塞点, 相位停留原因, 预算异常, 判决摘要, 维护回路异常]
+  audience_mechanism:                 # 机制运转：相位转换 + 判决理由 + 重试/熔断
+    content: [phase_transitions, verdict_with_rationale, retries, circuit_breaks]
+  audience_audit:                     # 全量（append-only 事件流本体；不裁剪不摘要）
+    content: [all_events]
+  rule: 三个受众是同一事件流的三个投影，不是三套日志——分级只发生在读端
+
+# ---- 读端 2：agent 代读（ask 意图——intent-routing.intents.ask）----
+ask_retrieval:
+  carrier: researcher as_tool（单次往返，无卡无队）
+  input_schema: registry/schemas/query-in.json
+  contract: 回答必须附 trace_id/card_id/事件引用；查不到就说查不到（禁编造——
+    hallucinated status 比没有 status 危险：owner 据此决策）
+  equivalence: 与 TUI 同源同投影——agent 回答与 TUI 视图对同一问题必然一致（同读一事件流）
+
+# ---- 写端：owner 控制动词（可观测的一体两面）----
+# 语义详 flows.yaml#owner_control；此处只声明通道契约。
+control_surface:
+  entry: TUI 控制面板 / interface-gateway（同一入口——视图上看得见的卡才可控制）
+  verbs: [pause, resume, abort]
+  channel: 控制动词=事件（card.paused / card.resumed / card.aborted），owner 经平台
+    通道落事件——TUI 无数据层写凭据（read_only 原则的唯一例外路径：写事件而非写状态，
+    与 escape_found 同模式：owner 意志经平台落事件，不持凭据）
+  feedback_loop: 控制动词落事件后，视图立即反映（同源投影的即时性是控制可信的前提
+    ——按下暂停却看不到暂停，等于没暂停）
+
+# ---- 实现位（机制型，非 agent 职责）----
+implementation:
+  tui: mechanism:tui（read-only 通道——stewardship channels 已声明 tui）
+  query_api: mechanism:interface-gateway（ask 检索路由 + 控制动词入站）
+  materializer: mechanism:metrics-aggregator（事件流→视图物化；周报同源）

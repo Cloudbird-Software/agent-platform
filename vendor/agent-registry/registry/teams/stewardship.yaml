@@ -1,0 +1,52 @@
+id: stewardship
+version: 3.0.0
+status: active
+archetype: stewardship
+scope: knowledge
+goal: 常设知识与归档团队：归档审核/漂移响应/蒸馏入库（ADR/skill/policy）/backlog 单写者归并
+members:
+- agent: agent:curator-main
+  seat: curator
+  count: 1
+  as_tool: false
+topology: single-seat
+orchestration:
+  assign: cron（周审）+ 事件触发（handoff 到达/drift 报告/backlog 提案）
+  merge: owner 手合（治理仓 C1/C2 永不 auto-merge）
+  phases_ref: standards/team-collaboration.yaml#teams.stewardship（常驻团队无相位机——事件驱动）
+verification:
+  in_team_check:
+    checkers: []
+    coverage: all-outputs
+    note: curator 产出走平台防线（owner-only CODEOWNERS+gate+drift-check）；red_cell findings
+      由本队审核入库（跨团队=可审）
+  external_audit:
+    team: null:owner
+    frequency: weekly
+    method:
+    - drift-review
+    - control-test-report
+    - escape-review
+    - re-check-sample
+    note: owner 周审三件套 + 归档抽检 10%（attention-ledger.sampled：curator 全审在前，owner 抽检复核）
+backlog_role: proposals 多写者（curator/responder/owner/planner）→ curator 单写者归并
+  （见 team-collaboration PART 3 interfaces.backlog；adversary 经 findings 由 curator 审核转化——不直写提案）
+workspace:
+  shared:
+    root: env:GOVERNANCE_WORKSPACE_ROOT
+    version_control: true
+  layout:
+    inbox: inbox/
+    artifacts: artifacts/
+    decisions: decisions/
+    findings: findings/
+    backlog: backlog/
+storage:
+  type: postgresql
+  ref: env:GOVERNANCE_DB_DSN        # 与 ephemeral 队分离（各队独占 DSN——销毁语义清晰，资产不随队丢失）
+lifecycle:
+  type: persistent
+  destroy_policy: manual
+channels:
+- web
+- tui

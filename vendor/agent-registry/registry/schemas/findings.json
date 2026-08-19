@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/findings",
+  "title": "findings",
+  "description": "过界封装 findings（researcher/adversary 共用；sources 非空+source_class 强制，CT-RES-002）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "conclusions",
+    "sources",
+    "source_class",
+    "confidence",
+    "trace_id"
+  ],
+  "properties": {
+    "conclusions": {
+      "type": "array"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "url",
+          "retrieved_at"
+        ],
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "retrieved_at": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "source_class": {
+      "type": "string",
+      "enum": [
+        "internal_repo",
+        "external_web"
+      ]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/review-in",
+  "title": "review-in",
+  "description": "review 输入（卡+规格+已批验收引用）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "card_id",
+    "spec",
+    "acceptance_refs",
+    "trace_id"
+  ],
+  "properties": {
+    "card_id": {
+      "type": "string"
+    },
+    "spec": {
+      "type": "string"
+    },
+    "acceptance_refs": {
+      "type": "array"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

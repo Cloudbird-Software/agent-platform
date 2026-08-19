@@ -239,6 +239,25 @@ def build_models(snap: SpecSnapshot, default_alias: str | None) -> dict[str, Any
     }
 
 
+def build_models_registry(snap: SpecSnapshot, default_alias: str | None) -> dict[str, Any]:
+    """机器可读模型注册表（workspace models.json）——执行面 resolver 的真源。
+
+    config.yaml 的 models 节是 jiuwenswarm 目标形状（${VAR} 占位）；
+    runner/agentctl 需要的是 alias 注册表——本文件补齐该缝：
+      gateway  网关 env 符号（base_url/api_key）
+      aliases  models.yaml 全量 alias（worker model hint 可解析）
+      default  无 hint 时的默认 alias（leader 模型）
+    """
+    aliases = sorted(snap.models)
+    if default_alias and default_alias not in aliases:
+        aliases = sorted({*aliases, default_alias})
+    return {
+        "gateway": {"base_url": "env:LLM_GATEWAY_ENDPOINT", "api_key": "env:LLM_GATEWAY_KEY"},
+        "aliases": aliases,
+        "default": default_alias or (aliases[0] if aliases else ""),
+    }
+
+
 def build_config(snap: SpecSnapshot, registry_root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """完整 AgentServer config 树 + notes。"""
     team_ids = [tid for tid in sorted(snap.teams) if snap.teams[tid].status in TEAM_RENDERABLE]
@@ -253,6 +272,7 @@ def build_config(snap: SpecSnapshot, registry_root: Path) -> tuple[dict[str, Any
             # leader 模型的别名记录进 models.default（实际成员各自带 alias）
             first = (template.get("predefined_members") or [{}])[0]
             default_alias = first.get("model_name") or None
+    notes["default_model_alias"] = default_alias
 
     config: dict[str, Any] = {
         "preferred_language": "zh",

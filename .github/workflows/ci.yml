@@ -69,6 +69,22 @@ jobs:
       runtime: python
       python-version: "3.12"
 
+  vendor:
+    # vendor 声明快照对账（ADR-0025）：快照实测 digest 必须与 PROVENANCE 一致——
+    # 绕过 agent-registry PR 流程手改 vendor 在此 fail-closed。
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: |
+          pipx install uv
+          uv run python scripts/vendor_registry.py
+
   deps:
     if: github.event_name == 'pull_request'
     permissions:
@@ -133,7 +149,7 @@ jobs:
 
   gate:
     if: always()
-    needs: [hygiene, check, deps, deps-audit, adr-required]
+    needs: [hygiene, check, deps, deps-audit, adr-required, vendor]
     runs-on: ubuntu-latest
     steps:
       - name: All required jobs green?

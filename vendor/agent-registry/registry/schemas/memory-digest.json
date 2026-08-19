@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/memory-digest",
+  "title": "memory-digest",
+  "description": "记忆蒸馏素材（ADR-0018）——ephemeral 团队 handoff 相位导出，先于 workspace 销毁落数据层；curator memory-distill 的唯一素材面",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "team_id",
+    "wave_id",
+    "trace_refs",
+    "distilled_lessons",
+    "source_refs"
+  ],
+  "properties": {
+    "team_id": { "type": "string" },
+    "wave_id": { "type": "string" },
+    "trace_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "distilled_lessons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lesson", "evidence_ref"],
+        "properties": {
+          "lesson": { "type": "string" },
+          "evidence_ref": { "type": "string" }
+        }
+      }
+    },
+    "reusable_facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fact", "source_ref"],
+        "properties": {
+          "fact": { "type": "string" },
+          "source_ref": { "type": "string" }
+        }
+      }
+    },
+    "source_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    }
+  }
+}

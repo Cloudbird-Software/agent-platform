@@ -1,0 +1,15 @@
+id: web_search
+version: 1.0.0
+kind: builtin
+severity: LOW
+side_effects:
+- net_read
+input:
+  schema_ref: schemas/query-in.json
+output:
+  schema_ref: schemas/search-results.json
+implementation:
+  repo: openJiuwen-ai/jiuwenswarm
+  path: builtin/web_search
+status: approved
+owner: team:stewardship

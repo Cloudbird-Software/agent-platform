@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/response-report",
+  "title": "response-report",
+  "description": "响应报告（先做后报；动作枚举=side-effects 词表）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incident_id",
+    "actions_taken",
+    "notified_owner",
+    "trace_id"
+  ],
+  "properties": {
+    "incident_id": {
+      "type": "string"
+    },
+    "actions_taken": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "action",
+          "authorization_basis",
+          "executed_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "deploy_reverse",
+              "feature_flag",
+              "failover",
+              "scale",
+              "data_freeze"
+            ]
+          },
+          "authorization_basis": {
+            "type": "string"
+          },
+          "executed_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "notified_owner": {
+      "type": "boolean"
+    },
+    "default_action_pending": {
+      "type": "string",
+      "description": "超时默认动作（human_notification 模板）"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

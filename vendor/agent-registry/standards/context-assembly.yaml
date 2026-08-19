@@ -1,0 +1,97 @@
+version: 1
+# ============================================================================
+# Context Assembly —— 上下文装配与记忆契约（ADR-0018）
+# ============================================================================
+# 问题：simulate-wave 测相位/权限/预算，gate 测产品代码，没有任何一层管
+# "agent 启动时实际拿到了什么"。装配不声明 → 各实现自行决定 → 不经意漂移。
+#
+# 三部分：
+#   PART 1 组件词表（components）——装配可引用的唯一构件集（fail-closed）
+#   PART 2 装配清单（assembly）——每 LLM 原型的 spawn manifest（组件+顺序）
+#   PART 3 记忆契约（memory）——类型/寿命/蒸馏；含 handoff 的 memory_digest 契约
+#
+# 边界（与既有单一真源的关系，不重复定义）：
+#   - 协作中的上下文策略（切片/压缩/移交/共享）→ team-collaboration PART 1
+#     四范式；本文件只管 spawn 时刻的装配（范式的入口锚点）
+#   - memory_read/memory_write 的权限 → side-effects 词表+capabilities 白名单；
+#     本文件管内容（什么类型、活多久、销毁时交出什么）
+#   - 机制原型无 spawn 上下文（无 LLM 主体）；其 llm_assist 薄层只消费
+#     schema 化输入（如 intent schema 校验），不另设装配
+#
+# 机器强制（validate.py）：
+#   - assembly 覆盖一切 LLM 原型（缺=启动上下文未声明）
+#   - assembly.components ⊆ 组件词表；memory.types ⊆ types_enum
+#   - memory_view 组件存在 ⟺ memory.types 非空（两侧矛盾=漂移）
+#   - ephemeral 团队 handoff 含 memory-export（素材先于销毁过界）
+# 执行侧（template_service 编排层）：按清单注入；清单外注入=平台违规
+#   （check:spawn-manifest-conformance）
+# ============================================================================
+
+components:                           # 组件词表（fail-closed：未列出即不可装配）
+  identity:        原型身份提示词（agent 声明 identity.prompt_ref 解析；每实例一份）
+  task_brief:      任务载体——按原型：builder/test_author=工作卡；planner=intent；
+                   judge=evidence-pack+card；responder=incident 信号+授权矩阵引用；
+                   deployer=部署卡；curator=周审输入；adversary=控制测试清单/调用指令；
+                   researcher=question（io_contract 输入）
+  knowledge_candidates: knowledge_retrieval 机制候选 top-5（ADR/skill/case_law，
+                   带 version_read；消费侧强制点见 artifacts.card.knowledge_refs）
+  wave_contracts:  波次契约 contracts/<wave_id>.yaml（多卡波次；单卡省略）
+  memory_view:     记忆读视图——按 PART 3 该原型 types 的投影（无记忆的原型不装配）
+  tool_surface:    可用工具面——tool 清单+side_effects+io_contract 引用
+                   （与 capabilities 声明同源，运行时由 token scope 收窄）
+  environment:     env 引用与 workspace 挂载点（一律 env:引用——硬规则禁明文）
+
+rules:
+  fail_closed: 未列入装配清单的内容不得注入启动上下文（模板/编排层执行；
+    清单是完备的——"多给了什么"与"少给了什么"同为违规）
+  order: 装配顺序=清单数组顺序；identity 先于任务载体（身份稳定，任务可变）
+  provenance: 每组件装配时记 version_read（陈读不得作判决依据——与
+    artifact_mediated.concurrency.staleness 同一规则在 spawn 侧的投影）
+  runtime_note: 本清单只约束 spawn 时刻；运行中的上下文流动（追加检索/移交/压缩）
+    由 team-collaboration 四范式管辖，不在本文件重复
+
+# ── PART 2 装配清单（每 LLM 原型一份；组件有序）───────────────────────────
+assembly:
+  builder:      {components: [identity, task_brief, wave_contracts, knowledge_candidates, tool_surface, memory_view, environment]}
+  planner:      {components: [identity, task_brief, knowledge_candidates, tool_surface, memory_view, environment]}
+  test-author:  {components: [identity, task_brief, knowledge_candidates, tool_surface, memory_view, environment]}
+                   # hermetic：不装配 builder 草稿类内容（隔离由 isolation 声明，
+                   # 装配清单不出现共享草稿组件即其 spawn 侧表达）
+  judge:        {components: [identity, task_brief, knowledge_candidates, tool_surface, environment]}
+                   # 无 memory_view：判例唯一入口=case_law/ artifact 只读（见 PART 3）
+  curator:      {components: [identity, task_brief, knowledge_candidates, tool_surface, memory_view, environment]}
+  adversary:    {components: [identity, task_brief, tool_surface, memory_view, environment]}
+                   # 一次性沙箱：知识面=控制测试清单本身（task_brief），不走检索
+  researcher:   {components: [identity, task_brief, tool_surface, memory_view, environment]}
+                   # as_tool 单次往返：无卡、无波次契约——上下文经济节点
+  deployer:     {components: [identity, task_brief, tool_surface, memory_view, environment]}
+  responder:    {components: [identity, task_brief, tool_surface, memory_view, environment]}
+
+# ── PART 3 记忆契约（内容与寿命；权限在 side-effects/capabilities）──────────
+memory:
+  types_enum: [semantic, episodic]    # 记忆类型词表（fail-closed）
+  defaults:
+    - 记忆不是规范来源（side-effects.yaml 注释同源）：不得作为判决/验收/policy 依据
+    - 写入经敏感过滤（memory_write 语义）；判例化认知走 case_law/ADR 升级路径，不走记忆
+    - 实例私有（isolation: private/hermetic 的记忆不跨实例共享——跨生命周期靠制品不靠记忆）
+  per_archetype:                      # types 非空 ⟺ assembly 含 memory_view（validate 强制）
+    builder:     {types: [episodic], retention: 30d, note: 短期工作记忆（波次内）}
+    planner:     {types: [semantic], retention: 90d, note: 项目认知}
+    test-author: {types: [semantic], retention: 90d, note: 判例认知（写入仅私有；判例规范力走 case_law）}
+    judge:       {types: [], note: 无跨实例记忆（per_dispute 判后销毁——防路径依赖；
+                  判例唯一入口=case_law 只读，profiles 已声明，此处收口为可校验字段）}
+    curator:     {types: [semantic], retention: persistent, note: 治理知识+ADR 索引}
+    adversary:   {types: [episodic], retention: 30d, note: 攻击史}
+    researcher:  {types: [semantic], retention: 30d, note: 检索缓存（同题复用）}
+    deployer:    {types: [episodic], retention: 30d, note: 操作史}
+    responder:   {types: [episodic], retention: 30d, note: 事故史}
+  digest:                             # 交接链的素材契约（堵 ADR-0004 的断点）
+    artifact: memory_digest           # 制品注册见 team-collaboration artifacts
+    producer: handoff 相位在场座位（delivery=test_author——planner 已于 cards.ratified 退场，
+      其规划经验经 cards/contracts 制品留存；incident=responder。ADR-0021 对齐 seats.present_in_phases）
+    schema: schemas/memory-digest.json
+    ordering_invariant: 导出先于 workspace 销毁；memory_digest 落数据层，
+      不随 30d 轨迹清理（ADR-0003 的 curated 例外——原始轨迹可清，蒸馏素材永存）
+    consumer: stewardship 侧 memory-distill（curator）——素材不可能先于消费者消失
+    fields_note: 每条 lesson/fact 必须带 evidence_ref/source_ref（禁无证据断言——
+      与 findings.json sources minItems 同一原则）

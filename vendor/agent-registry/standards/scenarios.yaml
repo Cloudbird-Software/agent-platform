@@ -1,0 +1,266 @@
+version: 1
+# ============================================================================
+# Scenarios —— 流程测试场景注册表（ADR-0015：测试底层方法统一）
+# ============================================================================
+# 统一方法论：一切测试 = 给状态机喂事件序列 → 断言不变式（事件进/事件出/断言不变式）。
+# 三层：
+#   L1 断言原语（A1-A7，simulate-wave.py）——不变，全场景共用：
+#     A1 actor 存在 / A2 权限合法 / A3 注意力有账 / A4 预算有归属 /
+#     A5 事件有生产者 / A6 相位转移合法 / A7 留痕完整
+#   L2 场景剧本（本文件）——声明化：id/class/narrative(事件序列走查)/asserts/hook
+#   L3 门禁——PR 跑回归场景（class: regression）；CT 的声明层先决跑 control 场景
+#     （class: control）；运行时攻击面由 adversary 按场景剧本执行
+#
+# 断言格式（L2 声明式，引擎求值；新场景优先纯声明式，复杂跨结构推导用 hook）：
+#   asserts:
+#     - {path: "standards/xxx.yaml#a.b.c", op: exists|eq|contains|contains_all|not_contains, value: ...}
+#   hook: simulate-wave.py 中的场景函数名（S1-S12 存量；迁移至纯声明式 = 后续增量）
+#
+# 边界（诚实声明）：模拟测"声明的世界"（权限/相位/预算/事件逻辑自洽）；
+#   实现的世界归 gate/verifier；防线真实有效归 escape_review/CT。
+#
+# 防掏空（ADR-0022 修复 issue #31 A-3/变异 E）：validate 校验——
+#   ① 每场景 asserts 或 hook 至少其一（空壳场景=场景注册表漂移）；
+#   ② 声明式断言总数 >= asserts_floor_total（下调须改本文件走 C1 PR——评审可见）。
+# ============================================================================
+registry:
+  asserts_floor_total: 79             # = 当前声明式断言总数（新增场景自然上移；删除即跌破——下调须走 C1 PR）
+scenarios:
+
+  # ── S1-S12 存量场景（ADR-0011 建立；断言主体在 simulate-wave.py hook）──────
+  S1-happy-path:
+    class: regression
+    narrative: 意图→组队→planner 产卡→test_author 冻结测试树→card_gate→build→verify
+      （verifier 判卷+review）→integrator 合并→release_bot behind flag→handoff→销毁
+    hook: scenario_happy_path
+    ct_refs: [CT-BLD-002, CT-PLN-001, CT-PLN-002, CT-TA-001, CT-RLB-001]
+  S2-amendment-timeout:
+    class: regression
+    narrative: builder 发现卡歧义→amendment_request(normative)→owner 24h 未响应→
+      默认动作=冻结+退回 backlog（绝不 approve）
+    hook: scenario_amendment_timeout
+    ct_refs: []
+  S3-incident-unsafe-rollback:
+    class: regression
+    narrative: sev1 告警+rollback_safe=false+owner 睡觉→预授权矩阵仅放行安全动作；
+      deploy_reverse 降级；TTL 到期升级
+    hook: scenario_incident_unsafe_rollback
+    ct_refs: [CT-RSP-001, CT-RSP-002, CT-DEP-001]
+  S4-escalation-budget:
+    class: regression
+    narrative: builder↔test_author 僵持+overhead_pool 耗尽→升级通道不冻结（预算不变式）
+    hook: scenario_escalation_budget
+    ct_refs: []
+  S5-judge-activation:
+    class: regression
+    narrative: 僵持首次发生（judge 未激活）→直达 owner；累计>=2→judge 实例化
+      （approved+异族+无写路径）
+    hook: scenario_judge_not_activated
+    ct_refs: [CT-JDG-001]
+  S6-incident-instantiation:
+    class: regression
+    narrative: sev3 走常规卡；sev1/sev2 incident_cell 实例化（座位绑定 approved）
+    hook: scenario_incident_instantiation
+    ct_refs: [CT-RSP-001]
+  S7-backlog-loop:
+    class: regression
+    narrative: escape review 产 backlog 提案→curator 归并→下波次 producer_gate 强制处置
+    hook: scenario_backlog_loop
+    ct_refs: []
+  S8-gaming-detection:
+    class: regression
+    narrative: builder PR 触及 tests/acceptance/**；holdout 失败 visible 全绿→
+      gaming 信号→激活 holdout
+    hook: scenario_gaming_detection
+    ct_refs: [CT-BLD-001, CT-TA-003]
+  S9-test-fix-path:
+    class: regression
+    narrative: builder 主张"测试写错了"→amendment_request(test_fix)→test_author 修正
+      （非减弱型 auto；减弱型降级特权变更）
+    hook: scenario_test_fix_path
+    ct_refs: [CT-TA-003]
+  S10-event-completeness:
+    class: regression
+    narrative: 遍历相位图+关键流事件→逐一断言有生产者（A7 留痕完整性）
+    hook: scenario_event_completeness
+    ct_refs: [CT-EVT-001]
+  S11-trust-chain:
+    class: regression
+    narrative: io_contract schema 实存；机制服务有原型+词表内 allow；关键 schema
+      语义抽查
+    hook: scenario_trust_chain
+    ct_refs: [CT-ADV-003]
+  S12-cross-lifecycle:
+    class: regression
+    narrative: dev-wave 销毁后 stewardship 消费归档资产（数据层制品不随队销毁）
+    hook: scenario_cross_lifecycle
+    ct_refs: []
+
+  # ── S13-S17 新场景（ADR-0015：纯声明式——零 hook，证明声明化可行）──────────
+  S13-trivial-fastpath:
+    class: regression
+    narrative: owner 说"这文案错了"→interface_gateway 判 fix/trivial→自明验收（不经
+      intent_ratification 示例批准）→scheduler 直分单 builder→verify（verifier 判卷
+      不豁免）→integrator auto merge——全链零 owner 阻塞点
+    asserts:
+      - {path: "standards/intent-routing.yaml#intents.fix.acceptance_source", op: eq, value: self_evident}
+      - {path: "standards/intent-routing.yaml#intents.fix.change_class", op: eq, value: trivial}
+      - {path: "standards/intent-routing.yaml#intents.fix.owner_sync", op: contains, value: none}
+      - {path: "standards/change-classes.yaml#classes.trivial.acceptance", op: contains, value: self_evident}
+      - {path: "standards/change-classes.yaml#classes.trivial.review", op: contains, value: verifier}
+      - {path: "standards/change-classes.yaml#classes.trivial.merge", op: contains, value: integrator auto}
+      - {path: "standards/change-classes.yaml#classes.trivial.promote_if", op: exists}
+      - {path: "standards/change-classes.yaml#classes.trivial.promote_if", op: contains, value: 拆分绕过检测}
+    ct_refs: []
+  S14-maintain-loop:
+    class: regression
+    narrative: 周扫开 issue→curator 周审转 backlog.proposals→归并→producer_gate 必处置
+      →修复 PR 关 issue（复绿证据）→复绿——issue 不可能躺在列表里（消费/驳回/带条件
+      延期三选一，无第四态）
+    asserts:
+      - {path: "standards/flows.yaml#maintain_loop.issue_lifecycle", op: exists}
+      - {path: "standards/flows.yaml#maintain_loop.issue_lifecycle.closed", op: contains, value: 复绿}
+      - {path: "standards/flows.yaml#maintain_loop.issue_lifecycle.deferred", op: contains, value: 机器可判定条件}
+      - {path: "standards/flows.yaml#maintain_loop.invariants", op: contains, value: 无第四态}
+      - {path: "standards/intent-routing.yaml#intents.maintain.acceptance_source", op: eq, value: pre_approved}
+      - {path: "standards/team-collaboration.yaml#interfaces.backlog.producer_gate", op: exists}
+      - {path: "standards/team-collaboration.yaml#interfaces.backlog.maintenance_trigger", op: exists}
+    ct_refs: []
+  S15-maintenance-wave:
+    class: regression
+    narrative: owner 长期无新意图，backlog 存 security 级条目或 aging>30d→curator 提请
+      maintenance wave→delivery_squad 以 backlog 为波次范围组建→验收 pre_approved
+    asserts:
+      - {path: "standards/flows.yaml#maintain_loop.maintenance_wave.trigger", op: contains, value: security}
+      - {path: "standards/flows.yaml#maintain_loop.maintenance_wave.trigger", op: contains, value: 30d}
+      - {path: "standards/flows.yaml#maintain_loop.maintenance_wave.executor", op: contains, value: curator}
+      - {path: "standards/flows.yaml#maintain_loop.maintenance_wave.acceptance", op: contains, value: pre_approved}
+      - {path: "standards/team-collaboration.yaml#teams.delivery_squad.lifecycle.trigger", op: contains, value: maintenance_wave.trigger}
+      - {path: "registry/teams/dev-wave.yaml#lifecycle.trigger", op: contains, value: maintenance_wave.trigger}
+      - {path: "standards/team-collaboration.yaml#interfaces.backlog.entry_schema", op: exists}
+    ct_refs: []
+  S16-owner-control:
+    class: regression
+    narrative: owner 经 TUI 暂停执行态卡（停表停预算）→resume 回原相位；abort 不可逆
+      reason 必填（need_gone/spec_wrong/superseded 三路善后）——控制动词=事件不是凭据
+    asserts:
+      - {path: "standards/flows.yaml#owner_control.verbs.pause.semantics", op: contains, value: wall_clock}
+      - {path: "standards/flows.yaml#owner_control.verbs.abort.semantics", op: contains, value: reason 必填}
+      - {path: "standards/flows.yaml#owner_control.verbs.abort.reason_routing.spec_wrong", op: contains, value: backlog}
+      - {path: "standards/team-collaboration.yaml#artifacts.card.lifecycle.states", op: contains_all, value: [paused, aborted]}
+      - {path: "standards/team-collaboration.yaml#flow.event_producers.card.paused", op: exists}
+      - {path: "standards/team-collaboration.yaml#flow.event_producers.card.aborted", op: exists}
+      - {path: "standards/observability.yaml#control_surface.verbs", op: contains_all, value: [pause, resume, abort]}
+      - {path: "standards/flows.yaml#owner_control.verbs", op: contains_all, value: [pause, resume, abort]}
+      - {path: "standards/flows.yaml#owner_control.verbs.resume.event", op: contains, value: card.resumed}
+    ct_refs: []
+  S17-unratified-intent-blocked:
+    class: control
+    narrative: 【负向/CT-PLN-003】planner 提交 intent.ratified_by != owner 的卡给
+      scheduler→intent-ratified 前置检查拒绝——未批准意图不得开卡（声明层先决：
+      check 已注册 active + scheduler 前置已声明；运行时攻击由 adversary 执行）
+    asserts:
+      - {path: "standards/flows.yaml#intent_ratification.steps.4", op: contains, value: intent-ratified}
+      - {path: "standards/flows.yaml#intent_ratification.steps.4", op: contains, value: CT-PLN-003}
+      - {path: "standards/checks.yaml#checks", op: contains, value: intent-ratified}
+      - {path: "standards/intent-routing.yaml#intents.deliver.acceptance_source", op: eq, value: new_ratable}
+      - {path: "standards/intent-routing.yaml#intents.deliver.owner_sync", op: contains, value: synchronous}
+    ct_refs: [CT-PLN-003]
+
+  # ── S18-S20 新场景（ADR-0018：上下文装配/记忆蒸馏/供应链——纯声明式）──────
+  S18-spawn-manifest:
+    class: regression
+    narrative: agent 实例化→编排层按 context-assembly 装配清单注入（identity 先于
+      任务载体）；judge 不装配 memory_view（判例唯一入口=case_law 只读）；
+      清单外注入=平台违规（check:spawn-manifest-conformance）
+    asserts:
+      - {path: "standards/context-assembly.yaml#rules.fail_closed", op: exists}
+      - {path: "standards/context-assembly.yaml#rules.order", op: contains, value: identity}
+      - {path: "standards/context-assembly.yaml#assembly.builder.components", op: contains_all, value: [identity, task_brief, tool_surface]}
+      - {path: "standards/context-assembly.yaml#assembly.judge.components", op: not_contains, value: memory_view}
+      - {path: "standards/context-assembly.yaml#memory.per_archetype.judge.types", op: eq, value: "[]"}
+      - {path: "standards/checks.yaml#checks", op: contains, value: spawn-manifest-conformance}
+    ct_refs: []
+  S19-memory-distill-before-destroy:
+    class: regression
+    narrative: ephemeral 队 handoff 相位导出 memory_digest 落数据层（先于 workspace
+      销毁；不随 30d 轨迹清理——curated 例外）→销毁后 curator 消费蒸馏——
+      素材不可能先于消费者消失（ADR-0004 断点收口）
+    asserts:
+      - {path: "standards/context-assembly.yaml#memory.digest.ordering_invariant", op: contains, value: 销毁}
+      - {path: "standards/context-assembly.yaml#memory.digest.schema", op: exists}
+      - {path: "standards/team-collaboration.yaml#artifacts.memory_digest", op: exists}
+      - {path: "standards/team-collaboration.yaml#teams.delivery_squad.lifecycle.handoff.team_side", op: contains, value: memory-export}
+      - {path: "standards/team-collaboration.yaml#teams.delivery_squad.lifecycle.handoff.stewardship_side", op: contains, value: memory-distill}
+      - {path: "registry/teams/dev-wave.yaml#lifecycle.handoff", op: contains, value: memory-export}
+      - {path: "registry/teams/incident-cell.yaml#lifecycle.handoff", op: contains, value: memory-export}
+    ct_refs: []
+  S20-supply-inventory:
+    class: regression
+    narrative: 工具/网关引用的开源项目必须先入 registry/projects.yaml（含 license/
+      pin_policy/audit）；CI 定时扫描（check:supply-audit）发现走 maintain_loop——
+      agent 体系自食其粮（dep 类防线对自己的基础设施同样成立）
+    asserts:
+      - {path: "registry/projects.yaml#projects", op: exists}
+      - {path: "registry/projects.yaml#audit_policy.tool", op: exists}
+      - {path: "registry/projects.yaml#audit_policy.routing", op: contains, value: maintain_loop}
+      - {path: "registry/tools/bash.yaml#implementation.repo", op: eq, value: openJiuwen-ai/jiuwenswarm}
+      - {path: "standards/checks.yaml#checks", op: contains, value: supply-audit}
+    ct_refs: []
+
+  # ── S21-S24 新场景（ADR-0021：红队批次3——owner 缺席/无发布面/重试耗尽/机制完备）──
+  S21-owner-absence-defaults:
+    class: regression
+    narrative: owner 长期不可用→同步阻塞点按超时默认动作降级：意图 7d 未批=暂存回
+      backlog+波次善后销毁（绝不默认批准）；sev1 前进修复 24h 未批=维持保守稳态（绝不
+      默认前进）；事故 TTL 后 owner 仍不可达→parked 交接 maintenance wave——等待失联者
+      不是稳态
+    asserts:
+      - {path: "standards/attention-ledger.yaml#synchronous", op: contains_all, value: [intent_ratification, sev1_forward_fix_authorization]}
+      - {path: "standards/attention-ledger.yaml#synchronous.0.default_on_timeout_7d", op: contains, value: 绝不默认批准}
+      - {path: "standards/attention-ledger.yaml#synchronous.1.default_on_timeout_24h", op: contains, value: 绝不默认前进修复}
+      - {path: "standards/team-collaboration.yaml#teams.incident_cell.lifecycle.on_ttl_expiry", op: contains, value: parked}
+      - {path: "standards/team-collaboration.yaml#artifacts.card.lifecycle.amendment.escalate_when", op: contains, value: 默认整波回炉}
+    ct_refs: []
+  S22-no-release-wave-destroy:
+    class: regression
+    narrative: 纯 doc/spike 波次无发布面→released_behind_flag/reverted 永不发生→
+      integrate→handoff 边与 destroy 条件含 no_release_face(wave)（merge/入库即交接）——
+      ephemeral 队不泄漏；spike 的 ADR 草案产出落在 delivery scope may_touch
+    asserts:
+      - {path: "standards/team-collaboration.yaml#flow.phases.graph", op: contains, value: no_release_face(wave)}
+      - {path: "standards/team-collaboration.yaml#teams.delivery_squad.lifecycle.destroy", op: contains, value: no_release_face}
+      - {path: "registry/teams/dev-wave.yaml#lifecycle.destroy_condition", op: contains, value: no_release_face}
+      - {path: "standards/team-collaboration.yaml#scopes.delivery.may_touch", op: contains, value: ADR 草案}
+      - {path: "standards/team-collaboration.yaml#artifacts.card.types.spike.output_must_be", op: contains, value: ADR 草案}
+    ct_refs: []
+  S23-retries-exhausted-replan:
+    class: regression
+    narrative: 返工循环 retries 耗尽→retries.exhausted 事件（producer=scheduler）→
+      any→plan 回炉重规划边——承诺"必须回 planner"有相位载体；争议期 budget_clock 暂停
+      但 retries 计数不暂停（争议循环不能绕过重试门禁）
+    asserts:
+      - {path: "standards/team-collaboration.yaml#flow.event_producers.retries.exhausted", op: exists}
+      - {path: "standards/team-collaboration.yaml#flow.phases.graph", op: contains, value: retries.exhausted}
+      - {path: "standards/flows.yaml#budget.enforcement", op: contains, value: 回 planner}
+      - {path: "standards/team-collaboration.yaml#artifacts.card.lifecycle.amendment.during", op: exists}
+    ct_refs: []
+  S24-mechanism-completeness:
+    class: regression
+    narrative: 交付链引用的一切机制有原型+有服务块：scheduler/verifier/integrator/
+      evidence_pack/metrics_aggregator 齐备且 id 绑定机制原型；"gate"只是判决层名
+      （实体=verifier，无独立 gate 机制）；memory-export 执行者=handoff 相位在场座位
+      （planner 已退场——无死人执行者）
+    asserts:
+      - {path: "standards/team-collaboration.yaml#services.scheduler.id", op: eq, value: scheduler}
+      - {path: "standards/team-collaboration.yaml#services.verifier.id", op: eq, value: verifier}
+      - {path: "standards/team-collaboration.yaml#services.integrator.id", op: eq, value: integrator}
+      - {path: "standards/team-collaboration.yaml#services.evidence_pack.id", op: eq, value: evidence-pack}
+      - {path: "standards/team-collaboration.yaml#services.metrics_aggregator.id", op: eq, value: metrics-aggregator}
+      - {path: "standards/team-collaboration.yaml#services.tui.id", op: eq, value: tui}
+      - {path: "standards/team-collaboration.yaml#teams.delivery_squad.services", op: contains_all, value: [card_gate, scheduler, verifier, integrator, evidence_pack, release_bot]}
+      - {path: "standards/team-collaboration.yaml#flow.event_producers.test_weakening", op: contains, value: mechanism:verifier}
+      - {path: "standards/team-collaboration.yaml#teams.delivery_squad.lifecycle.handoff.team_side.2.by", op: contains, value: seat:test_author}
+      - {path: "standards/team-collaboration.yaml#teams.delivery_squad.lifecycle.handoff.team_side.2.by", op: not_contains, value: seat:planner}
+      - {path: "standards/context-assembly.yaml#memory.digest.producer", op: not_contains, value: delivery=planner}
+    ct_refs: []

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/intent-in",
+  "title": "intent-in",
+  "description": "interface-gateway 产出的结构化意图（wave-planner 输入）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intent_id",
+    "raw_text",
+    "submitted_by",
+    "trace_id"
+  ],
+  "properties": {
+    "intent_id": {
+      "type": "string"
+    },
+    "raw_text": {
+      "type": "string",
+      "description": "人类原始意图文本"
+    },
+    "submitted_by": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

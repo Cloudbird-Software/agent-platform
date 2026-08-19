@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/dispute-in",
+  "title": "dispute-in",
+  "description": "争议受理包（evidence-pack 载体——judge 只读此包）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dispute_id",
+    "card_id",
+    "evidence_pack_ref",
+    "claims",
+    "version_read",
+    "trace_id",
+    "case_law_candidates"
+  ],
+  "properties": {
+    "dispute_id": {
+      "type": "string"
+    },
+    "card_id": {
+      "type": "string"
+    },
+    "evidence_pack_ref": {
+      "type": "string"
+    },
+    "claims": {
+      "type": "object",
+      "required": [
+        "party_a",
+        "party_b"
+      ],
+      "properties": {
+        "party_a": {
+          "type": "object",
+          "description": "结构化主张（禁自由文本转述）"
+        },
+        "party_b": {
+          "type": "object"
+        }
+      }
+    },
+    "case_law_candidates": {
+      "type": "array",
+      "description": "knowledge_retrieval 机制检索的候选判例"
+    },
+    "version_read": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

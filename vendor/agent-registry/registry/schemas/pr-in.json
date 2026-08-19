@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/pr-in",
+  "title": "pr-in",
+  "description": "开 PR 输入（card_id 强制——PR metadata 含卡号）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "title",
+    "head",
+    "base",
+    "card_id"
+  ],
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "head": {
+      "type": "string"
+    },
+    "base": {
+      "type": "string"
+    },
+    "card_id": {
+      "type": "string"
+    }
+  }
+}

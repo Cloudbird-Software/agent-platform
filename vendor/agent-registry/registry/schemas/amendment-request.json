@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/amendment-request",
+  "title": "amendment-request",
+  "description": "改卡请求（artifact 经 cards.* 频道落数据层；card_gate 机制分类/计数/冻结时钟）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "card_id",
+    "initiator",
+    "proposed_fields",
+    "justification",
+    "classify",
+    "trace_id"
+  ],
+  "properties": {
+    "card_id": {
+      "type": "string"
+    },
+    "initiator": {
+      "type": "string",
+      "enum": [
+        "builder",
+        "test_author"
+      ]
+    },
+    "proposed_fields": {
+      "type": "object"
+    },
+    "justification": {
+      "type": "string"
+    },
+    "classify": {
+      "type": "string",
+      "enum": [
+        "non_normative",
+        "test_fix",
+        "normative"
+      ]
+    },
+    "weakening": {
+      "type": "boolean",
+      "description": "test_fix 类必填：是否减弱型（true 则降级特权变更走 owner 批）"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  },
+  "if": {
+    "properties": {
+      "classify": {
+        "const": "test_fix"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "weakening"
+    ]
+  }
+}

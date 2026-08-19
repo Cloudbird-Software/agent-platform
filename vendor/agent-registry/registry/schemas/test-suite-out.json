@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/test-suite-out",
+  "title": "test-suite-out",
+  "description": "测试套件输出（无 verdict 字段——判卷属 verifier 机制，CT-TA-004）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "card_id",
+    "test_tree_sha",
+    "tests",
+    "assertion_map",
+    "trace_id"
+  ],
+  "properties": {
+    "card_id": {
+      "type": "string"
+    },
+    "test_tree_sha": {
+      "type": "string",
+      "description": "冻结树 sha——verifier 判卷依据"
+    },
+    "tests": {
+      "type": "array"
+    },
+    "assertion_map": {
+      "type": "object",
+      "description": "断言 id→acceptance_criteria_id 映射（traceability 强制）"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/deploy-task-in",
+  "title": "deploy-task-in",
+  "description": "部署任务（incident_cell 场景；逐动作人签）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incident_id",
+    "owner_approval_ref",
+    "rollback_plan_ref",
+    "actions",
+    "trace_id"
+  ],
+  "properties": {
+    "incident_id": {
+      "type": "string"
+    },
+    "owner_approval_ref": {
+      "type": "string",
+      "description": "sev1 前进修复 owner_required 凭证"
+    },
+    "rollback_plan_ref": {
+      "type": "string",
+      "description": "无预案不执行（fail-closed）"
+    },
+    "actions": {
+      "type": "array"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

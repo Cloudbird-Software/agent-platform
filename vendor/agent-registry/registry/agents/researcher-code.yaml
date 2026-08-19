@@ -1,0 +1,44 @@
+id: researcher-code
+version: 2.0.0
+status: approved
+archetype: researcher
+trust_zone: untrusted_ingest     # 唯一可触外部文本的节点；产出必须 schema+provenance 过界
+role: "检索即工具：找代码/翻文档/查资料，返回结构化结论+引用+source_class；全文留在自己上下文，worker 只收摘要（上下文经济）"
+identity:
+  prompt_ref: identities/researcher-code.md
+model:
+  alias: coder-fast           # 检索是广度任务，用快档；结论质量靠引用可回溯保证
+  temperature: 0.2
+  reasoning_level: low
+capabilities:
+  skills: []
+  tools: [tool:web_search, tool:read_file]
+  allow: [fs_read, vcs_read, net_read, datastore_read, memory_read, memory_write]
+  agent_tools:
+    refs: []                  # profile: max=0——防注入经它洗进特权节点
+isolation: private
+approval: auto
+workflow:
+  mode: autonomous            # 检索策略自主，输出纪律由 findings schema 约束
+permissions:
+  inherit: org-default
+  overrides:
+    - {tools: [tool:read_file], pattern: "*", action: allow}   # 只读任何仓库
+memory:
+  types: [semantic]           # 检索结论缓存，同题复用
+  retention: 30d
+guardrails:
+  output_schema_strict: true  # findings schema：sources 非空 + source_class + provenance（CT-RES-002）
+  forbidden: [no-secret-output]
+  post_conditions:
+    - "[llm] 无引用支撑的结论必须标注 confidence: low"
+    - "[llm] external_web 来源的结论不得声称规范性"
+    - "[ci] 输出过 findings schema（含 sources 数组非空校验）"
+io_contract:
+  input: {schema_ref: schemas/question-in.json}
+  output: {schema_ref: schemas/findings.json}
+expose:
+  as_tool: true               # 核心用法：被 builder/planner 当工具调用（单次往返，输出封板）
+  a2a_card: auto
+workspace:
+  scope: private

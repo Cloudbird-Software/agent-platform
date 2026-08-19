@@ -1,0 +1,69 @@
+id: incident-cell
+version: 1.0.0
+status: approved
+archetype: incident_cell
+scope: operational
+goal: "事故响应：按 incident_cell.authorization 条件预授权止血（sev1/sev2）；followup_cards 经 backlog 归并；
+  TTL 72h 到期升级绝不 auto-destroy"
+members:
+- agent: agent:responder
+  seat: responder
+  count: 1
+  as_tool: false
+- agent: agent:deployer
+  seat: deployer
+  count: 1
+  as_tool: false            # 常备绑定=预占座位（PART2 seats 0..1 按需激活的实例侧表达——ADR-0021 口径对齐）；
+                            # deployer 仅在 sev1 前进修复（owner_required）时激活动作
+topology: single-seat（responder 主战；deployer 按需）
+orchestration:
+  assign: 外部告警/deployer 移交/owner 呼叫触发实例化（severity_classified_by 见 PART 2；responder 无定级权）
+  merge: 不适用（operational scope 不产代码——boundary axiom 1）
+  authorization_ref: standards/team-collaboration.yaml#teams.incident_cell.authorization（条件预授权单一真源）
+  phases_ref: standards/team-collaboration.yaml#teams.incident_cell
+verification:
+  in_team_check:
+    checkers: []
+    coverage: all-outputs
+    note: 无 builder 成员（scope=operational 不产代码）；每动作落 incidents.* 事件+owner 事后 retro 审计
+  external_audit:
+    team: null:owner
+    frequency: per-incident
+    method:
+    - escape-review
+    note: 预授权动作 24h retro 审计（CT-RSP-002 追踪逾期债）
+workspace:
+  shared:
+    root: env:INCIDENT_WORKSPACE_ROOT
+    version_control: false           # 事故现场只读冻结；报告/retro 走数据层
+  layout:
+    inbox: inbox/
+    artifacts: artifacts/
+    decisions: decisions/
+storage:
+  type: postgresql
+  ref: env:INCIDENT_DB_DSN
+budget:
+  team_envelope:
+    usd: env:INCIDENT_USD_CAP
+    wall_clock: 72h                  # = TTL
+  overhead_pool:
+    usd: env:INCIDENT_OVERHEAD_USD   # evidence-pack/升级通知走池（升级通道永不冻结）
+  invariants_ref: standards/team-collaboration.yaml#budget.invariants
+lifecycle:
+  type: ephemeral
+  trigger: incident.sev_alert        # 外部告警/deployer 移交/owner 呼叫（trigger_sources 见 PART 2）
+  ttl: 72h
+  on_ttl_expiry: escalate_to_owner + extension_requires_owner（绝不 auto-destroy；owner 持续不可达
+    再 72h → parked 出口——保守稳态交接 maintenance wave，见 PART2 ADR-0021）
+  archive_to: team:stewardship
+  handoff:                           # 执行者见 PART 2 incident_cell.lifecycle.handoff
+  - incident_report
+  - memory-export                    # episodic 事故史→memory_digest（ADR-0018；与 retro_24h 互补）
+  - retro_24h
+  - followup_backlog_merge
+  destroy_policy: after-handoff
+  destroy_condition: exit_criteria 满足（service_restored AND root_cause_hypothesis AND followup_cards_created）
+channels:
+- web
+- pager                              # 值班通道（human_notification 模板）

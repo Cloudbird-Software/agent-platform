@@ -1,0 +1,538 @@
+version: 1.0
+# ============================================================================
+# Team Collaboration Standard —— 多 agent 团队与协作（v1.0）
+#
+# 骨架对齐 openjiuwen（不改变框架原则，只做时序与权限的声明化扩展）：
+#   协作三范式（subordinate/agent_as_tool/handoff）保留原名原义，扩展第四范式
+#   通信两模式（orchestrator 转交 A2A / 频道订阅）保留，加强制信封
+#   Team 声明仍落 registry/teams/*.yaml（members[].agent + as_tool 形态延续）
+#
+# 本文件是可执行声明：scripts/simulate-wave.py 消费本文件的相位图/权限/预算
+# 做确定性流程模拟（别的 AI 复跑可复现）；validate.py 做结构校验。
+#
+# 组织（五部分，替代 v0.2 九部分——收敛重复，一张图一条线）：
+#   PART 1 协作：范式与通信——工作怎么在 agent 之间流动
+#   PART 2 团队：scopes（权限域）× seats（座位）× services（共享服务）× teams（原型）
+#   PART 3 流与制品：flow（相位状态机+判决）× artifacts（一切跨阶段载体）× interfaces（团队间接口）
+#   PART 4 约束：公理（边界+不可委派）、预算不变式、注意力账本（→ attention-ledger.yaml）、指标
+#   PART 5 生效：activation——什么现在开，什么等触发
+# ============================================================================
+
+# ── 六条组织原则（设计的公理层，冲突时以此裁决）──────────────────────────
+principles:
+  - 权限边界切团队，不按功能切（delivery/knowledge/adversarial/operational，非前端队/测试队）
+  - 能确定的用代码（LLM 只坐判断位；调度/判卷/合并/发布全是机制）
+  - 上下文经济学（一切协作=上下文传递策略：切片/压缩/移交/共享）
+  - 预算与考核不惩罚诚实（升级免费、歧义卡暂停时钟、amendment 不计失败率）
+  - 默认动作永远选"事后撤销代价更小"的一侧（推导见 PART 4 axioms.default_action）
+  - 注意力是唯一不可扩容资源（一切 owner 阻塞点入账本，新增必须移除一个）
+
+# ══════════════════════════════════════════════════════════════════════════
+# PART 1 协作（collaboration）
+# ══════════════════════════════════════════════════════════════════════════
+
+paradigms:                           # 四范式；前三为 openjiuwen 预置
+  subordinate:                       # 主从（含 fan-out）
+    context_strategy: 切片           # 主保留全局；从只拿卡（验收引用+预算+依赖）
+    who_leads: mechanism:scheduler   # 确定性分派 → 卡必须带 capability_tags + depends_on
+    use_when: 批量同构并行（多卡到 builder 池）
+    failure_mode: 每卡都过、合起来冲突 → 跨卡一致性靠 contracts artifact（PART 2 delivery_squad.wave_consistency）
+  agent_as_tool:                     # agent 作为工具（openjiuwen members as_tool 形态）
+    context_strategy: 压缩           # 被调方自消化全文，只回结论+引用（researcher）
+    contract: io_contract 单次往返；输出封板不可二次加工
+    use_when: 把判断外包、决策权留在调用方
+  handoff:                           # 移交
+    context_strategy: 移交           # 调用方退出，被调方接管；移交包=卡+验收引用+决策摘要
+    use_when: 阶段切换（plan→build）；责任整体转移
+    subtype escalation:              # 向上移交+不可拒绝（"我们裁不了"≠"我不想干"）
+      to: [service:judge（域内，激活后）, owner（越域/judge 未激活）]
+      carrier: evidence-pack（证据不经争议方转述；禁携倾向性摘要）
+      budget: 计入发起方 overhead_pool（见 budget.invariants——升级通道永不冻结）
+  artifact_mediated:                 # 第四范式（扩展）：以制品为界，跨生命周期
+    context_strategy: 共享           # 参与方异步读写同一制品，可不同时存在
+    medium: [git PR, 事件流, 数据层（cards/findings/backlog/case_law）, contracts, 团队工作区]
+    why_first_class: 唯一支持参与方不同时存在的范式——ephemeral 队销毁后其产出仍被
+      stewardship 消费；消息范式在生命周期边界失效，制品范式不失效
+    concurrency: {default: optimistic_cas, single_writer: [backlog, contracts, adr_index, case_law],
+                  conflict_escalation: "CAS 连续失败 2 次 → escalation（协作边界划错）",
+                  staleness: 读必记 version_read；陈读不得作判决依据}
+
+channels:                            # 通信两模式（openjiuwen）+ 人通知
+  semantics: "write=经平台通道发布（事件流/PR/频道 API），非 datastore 直写凭据——与 flows.yaml event_integrity 一致"
+  routed_a2a:                        # orchestrator/scheduler 转交的点对点
+    envelope:                        # 一切 A2A 消息强制信封（schema 校验）
+      trace_id: {required: true}     # 贯穿 intent→卡→run→判决→事件
+      card_id: {required: false}     # 在途工作必带
+      provenance: {required: true}   # self | artifact:<ref> | external_web
+      source_class: {required_when: provenance != self}
+      trust_boundary_crossed: {required: true}
+  pub_sub:                           # 频道-订阅
+    rule: 只广播事实不指挥（指挥必走 routed_a2a，可追溯）
+    acl:
+      cards.*:     {read: [team_members, scheduler], write: [scheduler]}
+      findings.*:  {read: [owner, curator, adversary], write: [adversary, mechanism:verifier]}  # gaming 检测在 verifier（holdout/visible 分裂）——ADR-0021 命名统一；builder 申诉经 evidence-pack 附副本（无直读权）
+      decisions.*: {read: [team_members, judge, owner], write: [judge, owner]}   # judge 写=decision_made 自述事件（平台通道）
+      review.*:    {read: [team_members, scheduler, owner], write: [test_author, curator]}
+                                      # review 裁定= decision 类自述事件（合并闸门钥匙之一）；
+                                      # test_author=代码符合性（logic/dep/schema/prod），
+                                      # curator=spike 入库审核（dispatch 表——ADR-0022）；
+                                      # payload 契约=registry/schemas/review-decision.json
+      events.*:    {read: [metrics-aggregator, owner], write: [platform]}   # 平台带外
+      incidents.*: {read: [responder, deployer, owner], write: [responder, deployer, owner]}
+      backlog.proposals.*: {read: [curator], write: [curator, responder, owner, planner]}   # 提案层（多写者；ACL 唯一真源）
+                                        # adversary 不直写提案——其 findings 经 curator 审核后由 curator 转化入库（跨团队=可审，CT-ADV-002 写域限 findings/**）
+      backlog.*:   {read: [planner, curator, owner], write: [curator]}      # 归并层（单写者）
+  human_notification:                # 指向 owner 的一切通知
+    template: [severity+影响面一句话, 已自动执行, 需你决定（单问题+选项枚举）, 默认动作+超时]
+    rule: 无默认动作的人在环点禁止存在（默认动作按 axioms.default_action 推导，不逐项拍）
+
+# ══════════════════════════════════════════════════════════════════════════
+# PART 2 团队（scopes × seats × services × teams）
+# ══════════════════════════════════════════════════════════════════════════
+
+scopes:                              # 权限域：定义"能碰什么"（boundary axioms 的规范化）
+  delivery:    {may_touch: [code, PR, tests, contracts, "ADR 草案（仅 spike 卡产出——ADR-0021：与 card.types.spike
+                的 output_must_be 对齐；正式 ADR 入库经 curator adr-write 走 knowledge scope）"], may_not: [prod, policy]}
+  knowledge:   {may_touch: [backlog, ADR, skill, policy, case_law], may_not: [code]}
+  adversarial: {may_touch: [findings, control_tests], may_not: [code, policy]}
+  operational: {may_touch: [flags, config, rollback], may_not: [code]}     # 代码修复必经 delivery 卡
+
+seats:                               # 座位：占实体成员位（= archetype 实例的运行位）
+  present_in_phases:                 # 相位在场表（相位图见 PART 3 flow.phases）
+    planner:     {phases: [plan], exit_on: cards.ratified, reentry: on_normative_amendment, state_on_reentry: active}
+                                       # exit_on 使 plan→build 边条件 planner.state==exited 可求值（无 exit_on=主流程死锁）
+    test_author: {phases: [plan, build, verify, handoff]}   # plan=可测性审查；verify=意图符合性 review；handoff=retrospective
+    builder:     {phases: [build, verify], exit_on: "pr.merged OR wave.frozen"}   # verify 在场=返工回路
+    researcher:  {phases: any, binding: as_tool}       # 不占实体位（openjiuwen as_tool）
+    curator:     {phases: [steady]}                    # stewardship 常驻
+    adversary:   {phases: [invoked]}                   # red_cell 按需（owner 调用/触发器）
+    responder:   {phases: [incident]}
+    deployer:    {phases: [incident]}                  # 仅事故前进修复；正常发布无此位
+  states: [absent, active, frozen, exited]
+  write_exclusion:                   # 写锁不变式（替代"同相在场"互斥——本质是 artifact 写权限）
+    rule: 任一时刻对同一 artifact 处于 active 态的座位数 <= 1
+    example: planner 重入（amendment）期间 builder 必须 frozen（card.lifecycle 已有 run:frozen，此处升为不变式）
+    enforced_by: mechanism:scheduler（运行时写锁——判定者显式化；assemble 时 validate 查不出运行时并发）
+
+services:                            # 共享服务：跨队、按需实例化、不占团队成员位
+                                     # 命名绑定（ADR-0021）：kind: mechanism 的服务块必带 id=
+                                     # archetype-profiles 机制原型键（下划线键 ↔ 连字符原型），
+                                     # validate.py 强制 id 存在且与键名互译——消灭同实体三种写法
+  scheduler:                         # 调度（开卡分派/重试/熔断——delivery_squad leader）
+    kind: mechanism
+    id: scheduler
+    duty: 载入已批计划→按 capability_tags 分派卡；wall_clock/retries 计数与熔断；
+      retries 耗尽产 retries.exhausted（回 plan 重规划——flows#budget.enforcement）；
+      组队时判定 cross_squad.owned_paths 不相交；write_exclusion 运行时写锁
+    availability: organization-level（编排层被依赖即工作——activation PART5 机制基底）
+  verifier:                          # 判卷引擎=CI gate 机制（gate 层的唯一实体——"gate"是层名不是实体）
+    kind: mechanism
+    id: verifier
+    duty: 对 test_tree_sha 冻结树运行判决（required status check）；test_weakening 检测；
+      holdout 执行点（激活后）；产 gate.pass
+    availability: organization-level（ci-required-check 实现——archetype-profiles verifier）
+  integrator:                        # 合并=状态函数（无 agent 持 vcs_merge）
+    kind: mechanism
+    id: integrator
+    duty: required checks 全绿 + verifier verdict + 卡号 metadata → 机械触发合并（merge_policy）
+    availability: organization-level（auto-merge/merge-queue——archetype-profiles integrator）
+  evidence_pack:                     # 中立证据机器（争议触发）
+    kind: mechanism
+    id: evidence-pack
+    duty: 重跑争议测试 N 次/采日志哈希 → 不可变 evidence-pack artifact（judge 唯一消费面）
+    availability: organization-level（ci-job 争议触发——archetype-profiles evidence-pack）
+  metrics_aggregator:                # 指标聚合与异常检测（judge 激活计数/red_cell 审计计数的宿主）
+    kind: mechanism
+    id: metrics-aggregator
+    duty: 事件流可复算聚合（verdict_stalemate 计数→judge 激活；red_cell 零 findings 计数→暂停；
+      retro 债 aging；maintain_loop 的 aging/security 标注每日计算）
+    availability: organization-level（代码/SQL over 事件流——archetype-profiles metrics-aggregator）
+  interface_gateway:                 # 组织级意图入口（常驻——archetype-profiles 机制原型实例）
+    kind: mechanism
+    id: interface-gateway
+    duty: 人类输入→脱敏→intent schema 校验→路由（新工作→planner；在途→scheduler）；
+      ask 意图检索路由（observability.ask_retrieval）；owner 控制动词入站
+      （card.paused/resumed/aborted——flows#owner_control）
+    owner_involvement: none（NL→intent 薄 LLM 层必须过 schema）
+    availability: organization-level（不属任何单队——一切意图经此入境）
+  tui:                               # owner 直读视图与控制面板（ADR-0014 PR-B）
+    kind: mechanism
+    id: tui
+    duty: 事件流→视图物化（六视图目录 observability.views）+ 控制动词入站转发
+      （写事件非写状态——read_only 原则）
+    data_source: 事件流唯一事实源（与 ask_retrieval 同源同投影——回答一致性由结构保证）
+    owner_involvement: none（视图物化是确定性投影，无判断位）
+    availability: organization-level（常驻；stewardship channels 已声明 tui）
+  card_gate:                         # 卡批准=机制输出（不是人的动作，不是 planner 自批）
+    kind: mechanism
+    id: card-gate
+    output_event: cards.ratified
+    requires: [schema 合规, capability_tags 非空, depends_on 为 DAG,
+               "testability_signoff（test_author 逐卡——仅 acceptance-face 类：change_class ∉ [doc, trivial]；
+                 trivial 自明验收无 acceptance 树可审，判卷面=lint+unit（builder 工作面）——ADR-0022 消除快车道互斥）",
+               "test_tree_sha 已回写卡（测试树冻结——无树不批卡；同上条件化：doc/trivial 无 acceptance 树，
+                 unit 树随 PR 由 verifier 判卷）",
+               knowledge 处置完成（PART 3 artifacts.card.knowledge_refs）, contracts 存在（N>1 时）, risk_class 已标注]
+    owner_involvement: none          # owner 只批 intent 与 normative amendment
+  judge:                             # 仲裁（激活条件见 PART 5；未激活时 escalation 直达 owner）
+    kind: llm_service, per_dispute   # 一次仲裁一实例，判后销毁（防路径依赖）
+    members: [agent:arbiter]         # 服务型座位绑定（不入团队成员；激活时实例化）
+    invoked_by: [delivery 僵持, escalation]
+    activation_counter: metrics-aggregator 计数 verdict_stalemate 事件（scheduler 产）——
+                       "僵持累计 >= 2"由此可判定（无计数器=激活不可复算）
+    budget_from: 发起方 overhead_pool（升级通道不受预算约束——budget.invariants）
+    independence: 族 ≠ 争议双方；同一 dispute 不得复用上次实例
+    reads: [evidence-pack（schema 见 PART 3 artifacts）, case_law/, card]   # 固定包，禁读团队工作区/争议方原始对话
+    writes: []                        # 判决=decision_made 自述事件经平台通道（无写凭据，CT-JDG-001）；
+                                      # case_law 入库执行者=curator（经 curator 审核后由 curator 写入）
+  red_cell:                          # 红队（owner 直属，on-demand；独立于 stewardship）
+    kind: llm_service, owner_invoked
+    members: [agent:red-adversary]   # 服务型座位绑定（激活即用——不入团队成员）
+    invoke_on: [重大决策前 premortem（重大决策=C1 治理 PR 开出——机制可判定：C1 路径 PR 事件）,
+      控制测试排期（schedule: weekly）, gaming 信号, owner 随机抽发]
+    quota: {findings_per_week: "<=3", forced_ranking_top: 5, archive: 全量归档可查（quota 限注意力不限记录）}
+    audit_of_auditor:                # 互为指标（绝对信号，非比率——见 PART 4 metrics）
+      pause_trigger: 连续 3 次调用零有效 findings → 暂停两周转纯 owner-invoked
+      immediate_trigger: 控制测试首次未命中 → 立即人工看（设施漂移最强单点信号）
+  release_bot:                       # 发布执行者（无 agent 持有此权——机制）
+    kind: mechanism
+    id: release-bot
+    on: "PR merged（integrator）→ 部署 behind flag → 写 release_record"
+    stall_escalation: 流水线停滞超时 → escalation（队内无人能做发布，不能等死）
+  knowledge_retrieval:               # 知识检索（防自证不存在——候选由机制出，处置由人/agent 出）
+    kind: mechanism
+    id: knowledge-retrieval
+    consumers: [delivery_squad（卡侧）, stewardship（判例侧）]   # 跨队共享——服务即为此设计
+    on_card: 按 capability_tags 检索 ADR/skill 候选 top-5 → 卡必须逐项 applies/not_applicable(理由)
+    on_verdict: 检索候选判例 top-5 → judge 逐项 follow/distinguish
+  drift_check:                       # 治理漂移检测（平台仓实现——org 级常驻）
+    kind: mechanism
+    id: drift-check
+    implementation: ".github/governance/drift-check.sh（平台仓；含 §9 vcs_admin 唯一性）"
+    output: drift 报告 → owner 周审（stewardship 消费）
+
+teams:                               # 团队原型（team = seats 容器 + scope 授权；声明落 registry/teams/）
+  delivery_squad:
+    scope: delivery
+    topology: leader-teammate         # leader = mechanism:scheduler（openjiuwen 形态）
+    seats: {planner: 1, test_author: 1, builder: "1..N", researcher: "0..2(as_tool)"}
+    services: [card_gate, scheduler, verifier, integrator, evidence_pack, release_bot, judge*, red_cell*]  # *按 activation；键名=services 块（下划线）
+    wave_consistency:                 # 跨卡一致性（fan-out 的真失败模式）
+      artifact: "contracts/<wave_id>.yaml"          # planner 于 plan 相产出（卡间接口/共享类型/不变量）
+      writer: planner（single_writer）；builder 改契约 → normative amendment
+      gate: 每 PR 过 contract_conformance（机制）
+      when_n_eq_1: 省略
+    cross_squad:                      # 并发波次：静态路径分区（CAS 是检测不是预防）
+      assemble_declares: owned_paths [glob...]；并发 squad 的 owned_paths 必须不相交，相交 → 拒组建或串行
+      checked_by: mechanism:scheduler（组队时静态判定——判定者显式化；CAS 冲突计数是事后检测面）
+    lifecycle:
+      type: ephemeral
+      trigger: intent.received OR maintenance_wave.trigger   # 前者：interface-gateway 结构化后即组队
+                                      # ——planner 随队产验收示例；intent.ratified 是开卡前置
+                                      # （scheduler 前置检查），非组队前置（否则首波次 planner 无
+                                      # 所属团队、预算无池可归属）；后者：owner 无新意图时 curator
+                                      # 提请维护波次（flows#maintain_loop.maintenance_wave——backlog
+                                      # 即波次范围，interfaces.backlog.maintenance_trigger）
+      archive_to: stewardship
+      handoff:                        # 销毁前强制交接（每项有执行者——无主清单=队永不销毁）
+        team_side:                    # 队侧（destroy 前，相位 handoff）
+          - {item: artifacts-pr, by: "platform（git 事件带外——已合并 PR 天然留存；ADR-0021：platform 通道，非机制原型）"}
+          - {item: trace-archive, by: "mechanism:metrics-aggregator（事件流归档）"}
+          - {item: memory-export, by: "seat:test_author（handoff 相位唯一在场座位——ADR-0021 修复 planner 退场矛盾：planner 已于 cards.ratified 退场，其规划经验经 cards/contracts 制品随 artifacts-pr 留存；memory_digest 导出先于 workspace 销毁）"}
+          - {item: retrospective, by: "seat:test_author（handoff 相位在场）"}
+        stewardship_side: [memory-distill, adr-write]   # curator 消费归档资产执行（蒸馏入库/关键决策→ADR；
+                                      # memory-distill 素材面=memory_digest 制品——ADR-0018）
+      destroy: "after-handoff(team_side) AND (released_behind_flag OR reverted OR no_release_face(wave))"
+                                      # no_release_face=波次全部卡 change_class ∈ [doc, spike]（无发布面——
+                                      # ADR-0021：merge/入库即交接，永不销毁的 ephemeral 队=资源泄漏）
+      destroy_scope: "销毁=agent 实例与临时 workspace；数据层事件/制品不随队销毁（stewardship_side 据此异步消费）"
+  stewardship:
+    scope: knowledge
+    topology: single-seat
+    seats: {curator: 1}
+    services: [drift_check, metrics_aggregator, knowledge_retrieval]
+    backlog_role: proposals 多写者提交 → curator 单写者归并排序
+    lifecycle: {type: persistent, destroy: manual}
+  incident_cell:
+    scope: operational
+    topology: single-seat（responder 主战）
+    seats: {responder: 1, deployer: "0..1"}          # 人不在 seats（principals 单列）；0..1=按需激活——
+                                      # 实例可常备绑定座位（预占），动作仅 sev1 前进修复且 owner_required
+                                      # （三处口径一致：本表/registry incident-cell/role deployer，ADR-0021 对齐）
+    services: [evidence_pack, metrics_aggregator]    # 证据采集与 MTTR 指标；通知走 channels.human_notification
+    principals: {owner: {role: [approver, notifiee], ack_sla: 60m, on_timeout: 按 authorization 写死（60m=sev2 ack 窗，两处一致）}}
+    trigger_sources: [外部告警（体系外，显式依赖）, deployer 移交, owner 呼叫]   # 检测在体系外，此处显式声明
+    severity_classified_by: "告警源标签或 owner 指定；皆无 → sev2（保守默认——不误开 sev1 预授权；responder 无定级权）"
+    severity_bound: [sev1, sev2]      # sev3 走 delivery 常规卡
+    authorization:                    # 条件预授权（预授权动作枚举=side-effects 词表词，机器可比对 responder.allow）
+      sev1:
+        preauthorized_if: "release_record.rollback_safe AND within rollback_window"
+        actions_then: [deploy_reverse, feature_flag, failover, scale]
+        actions_else: [feature_flag, failover, scale, data_freeze]   # deploy_reverse 降级 owner_required
+        forward_fix: owner_required（须附 rollback_infeasibility_evidence 入 evidence-pack）
+      sev1_data_integrity:            # 数据类事故：默认"停止流血"而非"回到过去"
+        preauthorized: [data_freeze, feature_flag]
+        forbidden_without_owner: [deploy_reverse, forward_fix]
+      sev2:
+        preauthorized_if: 同上条件
+        actions_then: [feature_flag, scale]
+        deploy_reverse: "owner_ack_within(60m) else (rollback_safe ? deploy_reverse 预授权 : data_freeze)"
+    recovery_preference: [deploy_reverse, feature_flag, failover, forward_fix]   # 顺序即优先级；跳级须记录理由
+    lifecycle:
+      type: ephemeral
+      ttl: 72h
+      on_ttl_expiry: "escalate_to_owner + extension_requires_owner（绝不 auto-destroy）；
+        owner 持续不可达再 72h → parked 出口：responder 落 incident_report+followup 卡入 backlog 后
+        按保守稳态（data_freeze/降级运行）交接 maintenance wave 并销毁——证据留 evidence-pack/事件流不随队消失
+        （ADR-0021：等待失联者不是稳态， parked 是显式降级不是 auto-destroy）"
+      archive_to: stewardship
+      handoff:                        # followup_cards 经 backlog.proposals 由 curator 归并（不是孤立文档）
+        team_side:
+          - {item: incident_report, by: "seat:responder"}
+          - {item: memory-export, by: "seat:responder（episodic 事故史→memory_digest；与 retro_24h 互补——retro 记事件，digest 记可复用认知）"}
+          - {item: retro_24h, by: "seat:responder"}
+        stewardship_side: [retro_debt_tracking, followup_backlog_merge]
+      destroy: "exit_criteria 满足（followup_cards_created 是必要条件——修复不停留在 retro 文档）"
+      exit_criteria:
+        declared_by: [owner, responder+owner_ack]
+        requires: [service_restored, root_cause_hypothesis, followup_cards_created]
+
+# ══════════════════════════════════════════════════════════════════════════
+# PART 3 流与制品（flow & artifacts）
+# ══════════════════════════════════════════════════════════════════════════
+
+flow:                                # 波次相位状态机（simulate-wave.py 消费此图——声明即执行规范）
+  phases:
+    graph:                           # 注：条件键名用 when（YAML 的 on/off 是布尔陷阱——模拟器实测发现）
+      - {from: plan,    to: build,     when: "cards.ratified AND planner.state == exited"}   # 消除同事件竞态
+      - {from: build,   to: verify,    when: pr.opened}
+      - {from: verify,  to: build,     when: review.changes_requested}      # 返工回边（必须有）
+      - {from: verify,  to: integrate, when: "gate.pass AND (review.approve OR review.waived)"}   # waived=doc/trivial
+                                     # 免 review（dispatch 表判定，card_gate 产事件）——waived≠免判卷：verifier gate
+                                     # 照跑（change-classes trivial.review 注）。ADR-0022：原"AND review.approve"使
+                                     # review=none 类按 change_class 分类死锁（issue #31 C-1）
+      - {from: any,     to: plan,      when: amendment.normative.accepted}  # planner 重入
+      - {from: any,     to: plan,      when: retries.exhausted}   # 重试耗尽回炉重规划（flows#budget.enforcement
+                                     # 的相位载体——ADR-0021：承诺必须有边，否则返工振荡无终止条件）
+      - {from: integrate, to: handoff, when: "released_behind_flag OR reverted OR no_release_face(wave)"}   # 发布后进交接相位；
+                                     # no_release_face=波次全部卡 change_class ∈ [doc, spike]（merge/入库即交接——ADR-0021）
+    phase_order: [plan, build, verify, integrate, handoff]
+    deadlock_check: 每 phase 存在可达 exit 边（validate 校验：from==<phase> 的专属出边——any 通配边不计入，
+                     否则恒真；终态=handoff，队销毁由 lifecycle.destroy 表达。ADR-0022 修复 issue #31 A-4）
+  event_producers:                   # 相位图与主流程引用的一切事件的生产者（悬空事件=状态机不可执行）
+    intent.received:            mechanism:interface-gateway
+    intent.ratified:            owner（经 interface-gateway 签名落事件）
+    cards.ratified:             mechanism:card-gate
+    pr.opened:                  platform（git 事件带外——含 spike/doc 类的产出入库 PR）
+    gate.pass:                  mechanism:verifier
+    review.approve:             "seat:test_author（decision 类自述事件；spike 类 seat:curator 入库审核——
+                                dispatch 表，ADR-0022）"
+    review.changes_requested:   seat:test_author（decision 类自述事件）
+    review.waived:              mechanism:card-gate（dispatch 表判定 change_class.review==none 时产——
+                                doc/trivial 免 review 的机器可判定载体；waived≠免判卷）
+    owner_ratify:               owner（dep/schema 合并第三钥，经平台通道——merge_policy；
+                                账本 asynchronous.dep_and_schema_owner_ratify）
+    amendment.normative.accepted: owner
+    released_behind_flag:       mechanism:release-bot
+    reverted:                   mechanism:release-bot
+    verdict_stalemate:          mechanism:scheduler（判据：同一 PR 的 gate 与 review 结论相反，
+                                或双方同向 fail/changes_requested 但经 1 轮 test_fix 修复后仍互不让步
+                                ——同向僵持也计数，ADR-0021：否则"测试写错了"争议永不产生事件、judge 永不激活）
+    retries.exhausted:          mechanism:scheduler（per_card.retries 耗尽——budget.enforcement；触发 any→plan 回炉）
+    escape_found:               owner（经 interface-gateway/周审受理，平台落事件）
+    test_weakening:             mechanism:verifier（检测 tests/acceptance 减弱型 diff——"gate"是判决层名，
+                                实体=verifier 机制，ADR-0021 命名统一：无独立 gate 机制原型）
+    pr.merged:                  platform（git 事件带外——builder 退场条件）
+    wave.frozen:                mechanism:scheduler（预算熔断/整波冻结——builder 退场条件）
+    incident.sev_alert:         platform（告警接入带外——incident_cell 组队事件）
+    card.paused:                owner（经 TUI/interface-gateway 平台通道——flows#owner_control）
+    card.resumed:               owner（经平台通道——同上）
+    card.aborted:               owner（经平台通道——reason 必填，reason_routing 决定善后）
+  verdict_layers:                    # 三层判决（review≠判卷——判卷是 verifier 机制）
+    gate:        {type: mechanism, covers: "CI/holdout/mutation/contract_conformance", output: pass/fail+evidence}
+    review:                          # 意图符合性裁定——裁定者与形态按 change_class 分派（ADR-0022：
+                                     # dispatch 是机器真源，validate 按此类做 per-class 相位可达性求解）
+      type: seat（按 dispatch 分派）
+      question: "实现是否满足卡意图（不只是过测试）"
+      dispatch:                       # change_class → 裁定形态（与 change-classes.classes.<cc>.review 对齐）
+        doc:     {mode: waived}                    # review.waived（card_gate 产）
+        trivial: {mode: waived}                    # review.waived——verifier 判卷不豁免
+        logic:   {mode: seat, seat: test_author}
+        spike:   {mode: seat, seat: curator}       # 入库审核（跨团队=可审；ADR 归 decisions/ 走 C1）
+        dep:     {mode: seat, seat: test_author, extra_keys: [owner_ratify]}
+        schema:  {mode: seat, seat: test_author, extra_keys: [owner_ratify]}
+        prod:    {mode: seat, seat: test_author, extra_keys: [owner_per_action]}
+                                     # prod 的 owner_per_action=生产动作审批（flag 开启/环境审批，
+                                     # non_delegable）发生在 integrate 之后——verify 出边不受其阻塞
+      payload_schema: registry/schemas/review-decision.json
+    arbitration: {type: service(judge), trigger: builder↔test_author 僵持,
+                  routing: "'测试写错了'先走 test-author 修复路径（amendment.test_fix）；僵持才仲裁；judge 未激活 → 直达 owner",
+                  during_dispute: {run: frozen, budget_clock: paused}}   # 争议期间卡冻结（同 amendment.during）
+  merge_policy: "gate.pass AND (review.approve OR review.waived)（dep/schema 类另需 owner_ratify 第三钥）→ mechanism:integrator 自动合并（无人工；治理仓除外）"
+
+artifacts:                           # 制品=一切跨阶段/跨团队传递的载体（artifact_mediated 的 medium）
+  card:                              # 卡=上下文契约+预算载体+追溯单元（一切工作的原子）
+    fields_required: [id, wave_id, goal, "acceptance_refs（owner 已批验收示例 id）",
+                      capability_tags, depends_on, risk_class, change_class,
+                      "budget(tokens, wall_clock, retries, usd)", "applies_adr[]", "applies_skill[]"]
+    types:
+      feature: {acceptance: 功能断言（源自 owner 已批验收示例）}
+      spike: {acceptance: 决策文档+建议, output_must_be: ADR 草案（禁生产代码）,
+              budget: 独立硬上限, followup: 必产 feature card 或驳回理由}
+    knowledge_refs:                  # 消费侧强制点（知识资产=开工前置；候选由 knowledge_retrieval 出）
+      rule: 对机制检索的每个候选 ADR/skill 逐项 applies / not_applicable(理由)
+      forbidden: planner 自行声明"无相关 ADR"（自证不存在=仪式化入口）
+    lifecycle:                       # 卡的生命周期（amendment 并入此处，不再独立成节）
+      states: [drafting, testability_review, ratified, building, verify, paused, merged,
+               archived, aborted]
+      # paused=owner 暂停（building/verify 进入，resume 回原相位——语义 flows.yaml#owner_control）
+      # aborted=owner 终止终态（reason 必填，reason_routing 决定善后）
+      ratified_by: "service:card_gate（见 PART 2——机制输出）"
+      owner_control_ref: flows.yaml#owner_control（暂停/终止语义单一真源——此
+        处仅列状态；控制动词=事件（card.paused/card.resumed/card.aborted），owner
+        经平台通道落事件，TUI 无数据层写凭据）
+      amendment:
+        initiator: [builder, test_author]              # amendment_request 为 artifact（见下 amendment_request），非消息
+        forbidden: builder 直写 card 任何字段
+        classify:
+          non_normative: {fields: [实现提示, 参考链接, 拆分粒度], apply: auto, veto: owner(sampling)}   # 无需 planner 重入
+          test_fix:     {fields: [测试树修正（非减弱型）], initiator: test_author, apply: auto,
+                         guard: "减弱型（删测试/删断言/放宽阈值/加 skip）不走此类——降级为特权变更：新卡+owner 批+test_weakening 事件",
+                         builder_path: "builder 主张'测试写错了'→发 amendment_request（initiator 合法），
+                           card_gate 判为 test_fix 时由 test_author 执行修正；test_author 不认可 → 计 verdict_stalemate
+                           （ADR-0021：builder 申诉有合法落点，不因 initiator 枚举被堵死）"}
+          normative:     {fields: [acceptance_criteria, 验收引用, 契约], approver: owner（改验收=改需求）,
+                          attention_class: asynchronous_review（日批窗口，见 attention-ledger）,
+                          default_on_timeout_24h: "卡冻结+退回 backlog+波次继续其余卡（默认绝不 approve）"}
+        executor: card_gate 计数与分类（escalate_when 判定）；classify 三类互斥由机制判定
+        during: {run: frozen, budget_clock: paused}     # 不惩罚诚实方
+                                       # retries 计数不随 budget_clock 暂停（争议轮次照常计入 per_card.retries
+                                       # ——ADR-0021：防"每轮都落争议"绕过重试门禁造成无限循环）
+        escalate_when: "同一卡 normative amendment >= 2（卡有问题回炉）；同波次 > 3 → 冻结新开卡+escalate owner
+                        （是否整波回炉由 owner 裁；owner 24h 未裁 → 默认整波回炉退 backlog 重组——绝不默认放行，
+                        ADR-0021：人在环点必有默认动作）"
+        metrics: amendment_rate 归因 planner（产卡质量）；amendment 不计发起方失败率
+  amendment_request:                 # 改卡请求（artifact——经 cards.* 频道落数据层，schema 见 registry/schemas）
+    fields: [card_id, initiator, proposed_fields, justification, classify(non_normative|test_fix|normative)]
+    executor: mechanism:card-gate（分类/计数/冻结时钟）；normative 批准=owner 事件（amendment.normative.accepted）
+  evidence_pack:                     # 争议证据（机制采集；judge 唯一消费面——只读，禁争议方转述）
+    producer: mechanism:evidence-pack（重跑争议测试/采日志与哈希 → 不可变）
+    fields: [card, acceptance_criteria, 相关 contract, 失败断言 id+原始输出,
+             双方主张（结构化字段，禁自由文本）, version_read]
+  memory_digest:                     # 记忆蒸馏素材（ADR-0018：交接链的素材契约）
+    producer: handoff 相位在场座位（context-assembly memory.digest）
+    fields: [team_id, wave_id, trace_refs, distilled_lessons, reusable_facts, source_refs]
+    schema: registry/schemas/memory-digest.json
+    note: 落数据层；先于 workspace 销毁产出；不随 30d 轨迹清理
+      （curator memory-distill 的唯一素材面——素材不可能先于消费者消失）
+  release_record:                    # release_bot 于每次部署 behind flag 时写入
+    fields: [rollback_safe, rollback_window, flag_ids, wave_id]
+    note: "rollback_safe=false 当且仅当发布含 contract 相迁移/不可逆副作用"
+    consumers: [incident_cell.authorization, drift-check]
+  test_assets:                       # 测试资产（对抗双方各有人盯：builder 造假的信号、test_author 扩权的闸）
+    visible_suite: {by: test_author, readable_by: [builder]}
+    holdout_suite:
+      by: test_author
+      location: 独立私有仓（同仓 clone 即可读——不做假隔离声明）
+      readable_by: [verifier]      # 实体=verifier 机制（ADR-0021 命名统一：readable_by 原写的 gate 是层名）
+      ratio: ">=30% acceptance 断言"
+      regenerate_per_card: true
+      activation: "PART 5（首 gaming 嫌疑 OR risk_class=high OR change_class ∈ [schema, dep] 才开——首开不依赖 holdout 自身信号，防循环依赖）"
+    hard_rules:
+      - builder PR 触及 tests/acceptance/**（判决树）→ 强制 test_author review（gate 路径检查，不可自批）；
+        tests/unit/** 属 builder 正常工作面（设计工具），不触发
+      - holdout 失败且 visible 全绿 → gaming 嫌疑进 findings（builder 申诉经 escalation 载体 evidence-pack 附 finding 副本——builder 无 findings 频道直读权）
+      - traceability: 每条 holdout/visible 断言映射 card.acceptance_criteria_id；无映射断言不得作 gate 失败依据
+                      （堵 test_author 借断言扩验收范围——builder spec gaming 的镜像）
+
+interfaces:                          # 团队间接口（全部 artifact_mediated；读写权限见 channels.acl 唯一真源）
+  backlog:                           # 治理→交付的回路（唯一需求入口；读写权限见 channels.acl）
+    entry_schema: registry/schemas/backlog-entry.json   # 条目字段契约（severity/created_at/defer_condition
+                                      # ——maintenance_wave.trigger 与 aging 指标的字段真源）
+    flow: "proposals（多写者）→ curator 单写者归并排序 → merged；adversary 经 findings 由 curator 审核转化（不直写提案）"
+    producer_gate: planner 组建波次必处置 top-k——每项 纳入/驳回+理由/延期+条件（条件须机器可判定）
+    maintenance_trigger: owner 无新意图时 curator 提请 maintenance wave（触发条件
+      机器可判定——flows.yaml#maintain_loop.maintenance_wave.trigger；backlog 即波次范围）
+    consumer_gate: 卡的 knowledge_refs 处置（见 artifacts.card.knowledge_refs）
+  case_law:                          # 判例库（版本化 artifact，非记忆——记忆是锚定载体且不可审）
+    entry: "judge 判决经 curator 审核入库；normative: false（提升为 policy/ADR 前无规范力）"
+    judge_duty: 判决须对机制检索出的候选判例逐项 follow/distinguish（禁自证"无相关判例"）
+    research_verified: "进 ADR/卡的研究结论必须带 URL+取回时间+摘录，写入时机制校验可达性；
+                        存量不可达 → 标 unverified-archived，禁作验收依据（不删档）"
+
+# ══════════════════════════════════════════════════════════════════════════
+# PART 4 约束（constraints）
+# ══════════════════════════════════════════════════════════════════════════
+
+axioms:
+  boundary:                          # 边界公理（= scopes 的运行时断言）
+    - "incident_cell 不产代码变更（仅 flag/config/回滚）；代码修复必经 delivery 卡
+       exception: sev1 且回滚不可行 → deployer 前进修复（sev1_data_integrity 除外——数据完整性事故
+       禁无主前进修复，见 incident_cell.authorization；ADR-0021 消除公理与授权矩阵矛盾）；
+       72h 内补 PR+ADR，逾期进 debt_register"
+    - "stewardship/red_cell 不产代码；产出 backlog 条目/ADR/skill/policy"
+    - "delivery_squad 不触生产（至 released_behind_flag；flag 开启是 owner 动作）"
+    - "任何团队不可自扩权：按已注册原型实例化=自动；原型/seats/members 变更=registry PR+owner 批"
+  non_delegable:                     # 不可委派三件（委派任一 = 验收链自证循环）
+    - intent 的验收示例（谁定义"做对了"）
+    - feature flag 开启（谁决定"用户看见"；关闭/kill-switch 是恢复动作——responder 预授权，不在此列）
+    - schema contract 相迁移批准（谁承担不可逆）
+  default_action:                    # 默认动作推导原则（不逐项拍）
+    principle: 默认动作永远选择"事后撤销代价更小"的一侧
+    corollaries:
+      - 扩大验收/触生产/降门禁 → 默认拒绝或冻结，绝不默认放行
+      - 只耗时不改语义（检索/升级/重试）→ 默认放行
+      - 无法判定哪侧更可逆 → 不得设为人在环点，先拆到可判定
+
+budget:                              # 三层预算 + 不变式（invariants 优先级高于一切池规则）
+  layers: {team_envelope: "usd+wall_clock 硬熔断，超即冻结全队+escalate owner",
+           per_card: "tokens/wall_clock/retries（retries 按 risk_class，非全局常量），耗尽 → freeze+amendment_or_escalate",
+           overhead_pool: "researcher/judge/evidence-pack/escalation——让检索与升级对 agent 免费"}
+  invariants:
+    - escalation 与 judge 调用永不受任何预算约束；预算耗尽本身即 escalation 事件（提出问题不花自己预算）
+
+attention:                           # owner 注意力账本 → 独立文件 standards/attention-ledger.yaml（validate 校验）
+  ledger_ref: standards/attention-ledger.yaml
+  conservation_rule: 新增 owner-blocking 类目必须同时移除一个（账本为证；类目内交互频次由类目
+                     语义界定并在 metrics 周报可审计——静态层守恒类目数，ADR-0022 语义对齐）
+
+metrics:                             # 指标层通则：低事件密度下比率无信息量 → 两栏制
+  absolute_signals:                  # 绝对信号：零样本即触发（不需 min_sample）
+    examples: [控制测试首次未命中 → 立即人工, red_cell 连续 3 次零有效 findings → 暂停两周,
+               holdout/visible 分裂 → gaming finding]
+  ratio_metrics:                     # 比率指标：min_sample 以下只累积不触发自动动作；表达为绝对计数+滚动窗口
+    examples: [deferral_rate（仅"域内该判却推给人"，越域义务不计入——防反向激励）,
+               test_defect_rate（争议裁定"测试写错"计数，归因 test_author——对称于 amendment_rate 归因 planner）,
+               reversal_rate, escape_rate, amendment_rate]
+    validity: {min_sample: 10, below: "只累积，不自动触发"}
+
+# ══════════════════════════════════════════════════════════════════════════
+# PART 5 生效（activation）——文档全量声明，生效按机器可判定触发
+# ══════════════════════════════════════════════════════════════════════════
+# 原则：未触发的机制不实现、不维护；触发条件必须是机器可判定事件。
+# 这是对一人公司的诚实设计：体系本身不能成为注意力的最大消费者。
+activation:
+  now:                               # 成本近零/防不可逆 → 立刻生效
+    - 机制基底：全部机制原型与 services（scheduler/verifier/integrator/evidence-pack/interface-gateway/
+      metrics-aggregator/card-gate/release-bot/knowledge-retrieval/drift-check）——代码实现即生效，
+      activation 只治理 LLM 服务与重设施（机制无"待触发"状态，被依赖即工作）
+    - axioms（boundary+non_delegable+default_action）
+    - budget（三层+invariants）
+    - write_exclusion + phases（状态机与写锁）
+    - card_gate + card 模型（fields/types/knowledge_refs）+ amendment_request
+    - context-assembly（spawn manifest+记忆契约——编排层被依赖即工作；validate 声明层已生效，ADR-0018）
+    - attention_ledger
+    - release_record（rollback_safe——P0 数据安全）
+    - interfaces 双强制点（backlog producer_gate/consumer_gate）
+    - channels（信封+ACL+通知模板）+ flow.event_producers
+  on_trigger:                        # 触发才实现
+    holdout_suite:      {when: "首个 gaming 嫌疑 OR risk_class=high OR change_class ∈ [schema, dep]"}
+    judge_service:      {when: "builder↔test_author 僵持累计 >= 2（此前僵持直达 owner——你比 judge 便宜）"}
+    case_law:           {when: "judge 争议累计 >= 5（判例密度不足时无一致性问题可解；计数器=metrics-aggregator 计 judge verdicts）"}
+    red_cell:           {when: "首次上线后 OR 首个 sev1 后"}
+    contracts_wave:     {when: "builder N > 1"}
+    cross_squad_paths:  {when: "并发 squad > 1"}
+    metrics_auto:       {when: "对应指标样本 >= min_sample"}
+    degraded_mode:      {when: "可用族数 < 激活中的独立性需求（family_priority 动态排：judge>test_author>builder，未激活的不占族）",
+                         default_action: "按 family_priority 暂停最低优先激活族上的新卡开卡（在途卡不中断、不降级放行），
+                         直至族恢复或 owner 裁决降级方案——ADR-0021：触发后系统不得进入无定义状态"}

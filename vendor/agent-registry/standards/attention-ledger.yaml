@@ -1,0 +1,59 @@
+version: 1.1
+# ============================================================================
+# Attention Ledger —— owner 注意力账本（可校验）
+# team-collaboration.yaml PART 4 的引用文件；validate.py 断言：
+#   ① synchronous 类目数 <= max_synchronous_categories（conservation_rule 的硬表达）
+#   ② 每一项都有 default（或显式 no_default_justified 且理由可逆性成立）
+#   ③ 默认动作符合 default_action 原则（撤销代价更小侧；抽样审计人工复核）
+# 新增 owner-blocking 类目必须同时移除一个——改本文件走 registry PR（owner-only）。
+# 语义（ADR-0022 对齐 issue #31 D-4）：静态层守恒的是【类目数】——每周实际交互
+# 次数由类目语义界定（intent_ratification 每意图 ≤1 次、sev1 授权每事故 ≤1 次），
+# 运行时频次由 metrics-aggregator 计数（attention_interaction_rate 周报）可审计。
+# ============================================================================
+
+max_synchronous_categories: 2       # 硬断言（validate 检查；超标=设计缺陷不是运营参数）
+
+synchronous:                          # 必须人在场（穷举；增删必改本文件）
+  - item: intent_ratification         # 波次级验收示例批准——不可委派（non_delegable）
+    why_blocking: "定义'做对了'的源头；5~15 条×30 秒可读，不可预批"
+    default_on_timeout_7d: "意图自动暂存回 backlog（pending_owner 标注），波次按 abort(need_gone) 善后并销毁
+      ——绝不默认批准（ADR-0021：等待失联者不是稳态；暂存可逆，批准不可逆）"
+  - item: sev1_forward_fix_authorization
+    why_blocking: "不可逆+无法预先判定安全侧 → 不允许发生在 owner 缺席时"
+    default_on_timeout_24h: "维持保守稳态（authorization.actions_else/data_freeze——绝不默认前进修复；
+      ADR-0021：无默认动作的人在环点禁止存在，默认动作=更可逆一侧）"
+
+asynchronous:                         # 批量、可延迟、有默认动作
+  - {item: archetype_structure_change, default: "PR 保持挂起（不阻塞在途波次；结构变更延迟生效无安全代价）",
+     note: "boundary axiom 4：原型/seats/members 变更走 registry PR+owner 批"}
+  - {item: weekly_review, window: "<=60min 固定时窗", default_24h: "略过并留痕（下周看累积）",
+     note: "drift/CT/escape 三件套"}
+  - {item: judge_deferral_queue, default_24h: "按 judge 建议执行+留痕（判例可推翻）",
+     note: "judge 越域判决队列（profiles.judge internal_flow 1：越域→判上升人类）"}
+  - {item: dispute_escalation_before_judge, default_24h: "卡冻结+双方主张入 evidence-pack 留痕（绝不默认合并）",
+     note: "judge 激活前（僵持累计<2）僵持直达 owner（verdict_layers.arbitration.during_dispute）"}
+  - {item: normative_amendment_daily, default_24h: "卡冻结+退回 backlog+波次继续其余卡（绝不默认 approve）"}
+  - {item: test_weakening_approval, default_24h: "拒绝（判决树减弱默认冻结——验收范围缩水）",
+     note: "test-author 特权变更：新卡+owner 批+test_weakening 事件（amendment.classify.test_fix.guard）"}
+  - {item: dep_and_schema_owner_ratify, default_24h: "PR 保持挂起（默认不批——幻觉依赖/不可逆迁移是真实高频风险）",
+     note: "change-classes dep/schema 类 review: owner_ratify；maintain 回路 security 级条目升级同入此项
+            （flows#maintain_loop——security 修复多属 dep/schema 面；不新增账本条目，守恒）"}
+  - {item: sev2_rollback_ack, default_60m: "rollback_safe ? deploy_reverse 预授权 : data_freeze",
+     note: "incident_cell.authorization.sev2（ack 窗 60m；超时按条件默认——不空等）"}
+  - {item: flag_enable_decision, default: "不开（flag 默认关=安全侧）",
+     note: "non_delegable（开启本身必须 owner；含 prod 类逐动作人签=flag 开启/环境审批）"}
+  - {item: schema_contract_phase_approval, default: "拒绝（不可逆侧默认冻结）"}
+  - {item: incident_ttl_expiry, default: "延长需 owner 主动批准；未批=冻结现场+持续升级提醒（绝不销毁）"}
+
+sampled:                              # 抽检替代门禁（auto_with_veto / sampling）
+  - {item: archive_review, full_review_by: curator, owner_sampling: "10%（curator 全审在前，owner 抽检复核）"}
+  - {item: degraded_mode_card_ack, rate: "20%",
+     note: "补偿是机制性的（同族双跑交叉校验+holdout 50%），人只抽检——不逐卡"}
+  - {item: non_normative_amendment_veto, rate: "10%", note: "apply: auto + owner 抽检否决"}
+
+auto:                                 # 纯机制无人工（列出以区别于 sampled）
+  - cards.ratified（service:card_gate，owner_involvement: none）
+  - merge（integrator：gate.pass AND review.approve）
+  - release_behind_flag（release_bot）
+  - sev1/sev2 条件预授权动作（按 incident_cell.authorization；rollback_safe 由 release_record 判定）
+  - ephemeral 团队按已注册原型实例化（原型/seats 变更才需 owner——boundary axiom 4）

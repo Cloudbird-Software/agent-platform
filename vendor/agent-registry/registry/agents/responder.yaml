@@ -1,0 +1,45 @@
+id: responder
+version: 1.0.0
+status: approved
+archetype: responder
+trust_zone: trusted_control
+role: "预授权恢复：按 incident_cell.authorization 执行最小恢复动作（deploy_reverse/feature_flag/failover/scale/data_freeze）；
+  先做后报（async_notify），全留痕，24h 补 retro；无定级权、无前进权、无自扩权"
+identity:
+  prompt_ref: identities/responder.md
+model:
+  alias: coder-fast                   # 恢复是时效敏感任务；动作集已被授权矩阵限定
+  temperature: 0.1
+  reasoning_level: medium
+capabilities:
+  skills: []
+  tools: [tool:read_file]             # infra 动作走平台 ops API（capability 直达，无 bash——同 planner datastore 模式）
+  allow: [fs_read, vcs_read, deploy_reverse, feature_flag, failover, scale, data_freeze, ci_trigger, datastore_read]   # =profile（产出经平台通道落流，无 datastore 写）
+  agent_tools:
+    refs: []                          # profile: max=0（恢复动作不接受任何 agent 转述指令）
+isolation: private
+approval: async_notify                # = profile：先做后报（恢复类动作延迟成本 > 误恢复成本）
+permissions:
+  inherit: org-default
+  overrides:
+    - {tools: [tool:read_file], pattern: "re:.*prod.*secret.*", action: deny}   # CT-RSP-001 声明层配合（secret_read 不在 allow）
+credential:
+  github_app: cloudbrid-agent
+  secrets: [OPS_RUNBOOK_TOKEN]
+memory:
+  types: [episodic]
+  retention: 30d                      # 事故史（episodic；判例沉淀走 retro→stewardship，不留在私有记忆）
+guardrails:
+  output_schema_strict: true
+  forbidden: [no-secret-output, no-forward-deploy, no-self-authorize]
+  post_conditions:
+    - "[platform] 每个预授权动作落 incidents.* 事件（含授权依据条目+release_record 快照）"
+    - "[llm] 通知 owner 用 human_notification 模板（含默认动作+超时）"
+io_contract:
+  input: {schema_ref: schemas/incident-in.json}
+  output: {schema_ref: schemas/response-report.json}
+expose:
+  as_tool: false
+  a2a_card: none
+workspace:
+  scope: private

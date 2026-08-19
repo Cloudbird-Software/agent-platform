@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/ct-schedule-in",
+  "title": "ct-schedule-in",
+  "description": "控制测试排期（adversary 输入）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schedule_id",
+    "tests",
+    "window",
+    "trace_id"
+  ],
+  "properties": {
+    "schedule_id": {
+      "type": "string"
+    },
+    "tests": {
+      "type": "array",
+      "description": "control-tests.yaml 的 CT id 列表"
+    },
+    "window": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

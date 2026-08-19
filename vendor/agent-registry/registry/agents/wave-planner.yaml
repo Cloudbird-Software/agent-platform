@@ -1,0 +1,62 @@
+id: wave-planner
+version: 2.1.0
+status: approved
+archetype: planner
+trust_zone: trusted_control
+role: 工作源头：意图→验收示例（owner 批）→波次计划+工作卡+测试规格；只写计划产物，不写实现
+identity:
+  prompt_ref: identities/wave-planner.md
+model:
+  alias: coder-deep
+  temperature: 0.3
+  reasoning_level: high
+capabilities:
+  skills: []
+  tools:
+  - tool:read_file
+  - tool:write_file
+  allow:
+  - fs_read
+  - fs_write_repo
+  - vcs_read
+  - datastore_read
+  - datastore_write
+  - memory_read
+  - memory_write
+  agent_tools:
+    refs:
+    - agent:researcher-code
+isolation: private
+approval: auto
+workflow:
+  mode: fixed
+  steps_ref: workflows/wave-planner.steps.md
+permissions:
+  inherit: org-default
+  overrides:
+  - tools:
+    - tool:write_file
+    pattern: re:^(?!(plans|cards|specs|contracts)/).*$
+    action: deny
+    severity: HIGH
+memory:
+  types:
+  - semantic
+  retention: 90d
+guardrails:
+  output_schema_strict: true
+  forbidden:
+  - no-secret-output
+  post_conditions:
+  - '[llm] 每张工作卡含 owner 已批验收示例引用（intent.ratified_by=owner）'
+  - '[llm] 测试规格独立于实现描述（描述''验证什么''而非''怎么实现''）'
+io_contract:
+  input:
+    schema_ref: schemas/intent-in.json
+  output:
+    schema_ref: schemas/wave-plan.json
+expose:
+  as_tool: false                     # planner 是 delivery_squad 实体座位（多步波次规划装不进 as_tool 单次往返；as_tool 形态仅 researcher）
+  a2a_card: none
+workspace:
+  scope: private

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/handoff-in",
+  "title": "handoff-in",
+  "description": "ephemeral 队销毁前交接（curator 消费）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "team_instance_id",
+    "handoff_items",
+    "trace_id"
+  ],
+  "properties": {
+    "team_instance_id": {
+      "type": "string"
+    },
+    "handoff_items": {
+      "type": "array"
+    },
+    "trace_id": {
+      "type": "string"
+    }
+  }
+}

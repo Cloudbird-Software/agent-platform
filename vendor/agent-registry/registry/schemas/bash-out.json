@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/bash-out",
+  "title": "bash-out",
+  "description": "shell 工具输出",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "exit_code",
+    "stdout",
+    "stderr"
+  ],
+  "properties": {
+    "exit_code": {
+      "type": "integer"
+    },
+    "stdout": {
+      "type": "string"
+    },
+    "stderr": {
+      "type": "string"
+    }
+  }
+}

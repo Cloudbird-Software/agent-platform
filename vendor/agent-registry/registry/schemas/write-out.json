@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudbird/agent-registry/schemas/write-out",
+  "title": "write-out",
+  "description": "写文件输出",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "path",
+    "bytes_written"
+  ],
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "bytes_written": {
+      "type": "integer"
+    }
+  }
+}

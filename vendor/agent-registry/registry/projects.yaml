@@ -1,0 +1,40 @@
+version: 1
+# ============================================================================
+# Projects —— 组织开源项目清单（ADR-0018：agent 体系的供应链单一真源）
+# ============================================================================
+# 规则：
+#   1. tool 声明的 implementation.repo 与 models.yaml gateway.upstream_runtime.repo
+#      必须 ∈ 本清单（validate fail-closed——org 名/仓名漂移在此灭绝）
+#   2. 每项必填 role/license/pin_policy/audit——清单即审计对象，字段残缺=不可审计
+#   3. 持续审计：Dependabot 只认包管理器 manifest，不认 YAML 清单——由
+#      check:supply-audit（CI-Workflows 定时 osv-scanner/renovate）消费本清单；
+#      发现走 maintain_loop（issue→curator→backlog 三选一，无第四态），不建独立流程
+#   4. 引入新开源项目 = registry PR（change-classes dep 类同等适用：sca/license-check/
+#      hash-pin + owner_ratify——给产品代码定的防线，自己吃的基础设施同样成立）
+#   5. 反向：无消费者的条目 = 死条目（validate 拒绝——与 ct-coverage 反向同模式）
+# 边界（ADR-0022 对齐 issue #31 D-2）：本清单管【开源供应链依赖】。机制原型
+#   （archetype-profiles kind=mechanism）的 implementation 指向 org 内部仓/平台设施
+#   （如 drift-check 的 .github/governance/）——org-internal 资产非开源依赖，不入
+#   本清单；其声明/绑定/幽灵检测由 archetype-profiles + validate 机制命名绑定承担。
+# ============================================================================
+audit_policy:
+  tool: osv-scanner + renovate（git 依赖钉版本）
+  schedule: weekly
+  routing: 发现→maintain_loop（flows.yaml issue_lifecycle——不建平行小流程）
+  check: check:supply-audit
+projects:
+  - repo: openJiuwen-ai/jiuwenswarm
+    role: 编排框架 upstream（官方镜像，不 fork 不 submodule；PyPI 包名 workswarm，wheel 钉版消费）
+    license: Apache-2.0            # ADR-0025 首审回填（上游 LICENSE 文件实证）
+    pin_policy: deploy-time-pin    # 与 models.yaml upstream_runtime.policy 同源
+    audit: {tool: osv-scanner, schedule: weekly}
+  - repo: openJiuwen-ai/agent-core
+    role: agent 内核 SDK upstream（openjiuwen：DeepAgent/TeamAgent/SwarmFlow 引擎；jiuwenswarm 的传递依赖，显式登记）
+    license: Apache-2.0            # 上游 pyproject license 声明实证（ADR-0025）
+    pin_policy: deploy-time-pin    # 与 models.yaml sdk_runtime.policy 同源；显式钉版覆盖 git@develop 滚动依赖
+    audit: {tool: osv-scanner, schedule: weekly}
+  - repo: Cloudbird-Software/agent-tools
+    role: 组织工具集（gitcode-pr 等自有工具宿主）
+    license: org-internal
+    pin_policy: deploy-time-pin
+    audit: {tool: osv-scanner, schedule: weekly}
