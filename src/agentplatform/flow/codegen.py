@@ -287,9 +287,10 @@ def compile_team_flow(snap: SpecSnapshot, team: Entity, graph: PhaseGraph) -> st
     head = _head(team, snap, graph)
     meta = _meta(team, snap, graph)
     schemas = (
-        "SCHEMA_WAVE_PLAN = {\n" + _dict_lit(_schema_cards(), 0) + "\n}\n"
-        "SCHEMA_GATE = {\n" + _dict_lit(_schema_gate(), 0) + "\n}\n"
-        "SCHEMA_REVIEW = {\n" + _dict_lit(_schema_review(), 0) + "\n}\n"
+        # _dict_lit 自带花括号——外层再包 { } 会变成 set 字面量（运行时 unhashable）
+        "SCHEMA_WAVE_PLAN = " + _dict_lit(_schema_cards(), 0) + "\n"
+        "SCHEMA_GATE = " + _dict_lit(_schema_gate(), 0) + "\n"
+        "SCHEMA_REVIEW = " + _dict_lit(_schema_review(), 0) + "\n"
     )
     is_wave = str(team.raw.get("topology") or "").startswith("leader-teammate")
     body = _delivery_body(snap, team, seats) if is_wave else _sequential_body(graph, seats)

@@ -8,6 +8,8 @@
 - D4 结构：META 存在（name 非空 str、phases 非空 list）、async def run(args)
 - D5 phase() 标题 ∈ META["phases"]（进度组与声明相位图一致）
 - D6 label 唯一（观测面可按 label 归因——重复即观测盲区）
+- D7 模块级执行：常量区真实求值（抓 set 字面量/unhashable 等 AST 抓不住的
+  运行时错——产物顶层只有字面量与函数定义，执行无副作用；仅在 D2/D3 干净时执行）
 """
 
 from __future__ import annotations
@@ -123,7 +125,22 @@ def lint_workflow_source(source: str) -> list[str]:
     dupes = {x for x in labels if labels.count(x) > 1}
     for x in sorted(dupes):
         issues.append(f"D6 label 重复：{x}")
+
+    # D7：import 面干净才执行（否则先把危险面报全，不在可疑产物上求值）
+    if not any(i.startswith(("D2", "D3")) for i in issues):
+        issues.extend(_module_exec_issues(source))
     return issues
+
+
+def _module_exec_issues(source: str) -> list[str]:
+    """D7：compile+exec 模块顶层（字面量区）——AST 合法但运行时才炸的回归在此拦截。"""
+    try:
+        code = compile(source, "<flow-lint>", "exec")
+        ns: dict = {}
+        exec(code, {"__name__": "flow_lint"}, ns)
+    except Exception as e:
+        return [f"D7 模块级执行失败：{type(e).__name__}: {e}"]
+    return []
 
 
 def _kw_labels(fn: ast.AST) -> list[str]:
