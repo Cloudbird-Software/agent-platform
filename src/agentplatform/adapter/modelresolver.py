@@ -106,6 +106,11 @@ class GatewayModelResolver:
                     "client_provider": r.provider,
                     "api_key": r.api_key,
                     "api_base": r.api_base,
+                    # 网关按可信网络对待（与 config.yaml models.default 渲染的
+                    # verify_ssl: False 同姿态）。上游语义 verify_ssl=True 必须
+                    # 配 ssl_cert——内网/本机网关（http://host:4000）不适用，
+                    # 不给则开箱即崩（openjiuwen base_model_client 校验）。
+                    "verify_ssl": False,
                 },
                 "model_request_config": {"model": r.model},
             }
