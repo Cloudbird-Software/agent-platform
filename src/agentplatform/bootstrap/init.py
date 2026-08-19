@@ -51,7 +51,8 @@ def init_workspace(
 
     return {
         "workspace": str(ws),
-        "spec_digest": manifest.digest[:16],
+        "spec_digest": manifest.spec_digest[:16],
+        "manifest_digest": manifest.digest[:16],
         "files": len(manifest.files),
         "flows": sorted(k for k in manifest.files if k.startswith("swarmflow/")),
         "env_example": str(env_example),

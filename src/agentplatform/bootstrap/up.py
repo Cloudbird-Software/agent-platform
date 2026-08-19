@@ -29,6 +29,15 @@ class UpError(Exception):
     """up 前置条件不满足（可修复——消息里带 fix 动作）。"""
 
 
+def _validate_team(team: str) -> str:
+    r"""team id 只允许 [-\w]——挡路径穿越（../）与绝对路径注入。"""
+    import re
+
+    if not re.fullmatch(r"[\w.-]+", team) or ".." in team or team.startswith("."):
+        raise UpError(f"非法 team id：{team!r}（只允许字母/数字/-/_/. 且不得以 . 开头）")
+    return team
+
+
 def _resolver(workspace: Path) -> GatewayModelResolver:
     try:
         return GatewayModelResolver(load_models_registry(workspace))
@@ -38,7 +47,13 @@ def _resolver(workspace: Path) -> GatewayModelResolver:
 
 def _preflight(workspace: Path, team: str) -> dict[str, Any]:
     """零调用预检：渲染面完整 + 脚本在位 + 凭据齐备。返回检查明细。"""
+    from agentplatform.adapter.runner import RunnerError, verify_rendered_files
+
     m = load_manifest(workspace)  # 自校验（被篡改即 ValueError）
+    try:
+        verify_rendered_files(workspace)  # 逐文件磁盘哈希（防产物被换）
+    except RunnerError as e:
+        raise UpError(str(e)) from e
     script = workspace / "swarmflow" / f"{team}.py"
     if not script.is_file():
         available = sorted(p.stem for p in (workspace / "swarmflow").glob("*.py"))
@@ -70,6 +85,7 @@ def run_up(
     args_json: str | None = None,
 ) -> dict[str, Any]:
     """执行（或预检）团队流；返回摘要 dict（CLI 负责 JSON 打印）。"""
+    _validate_team(team)
     ws = Path(workspace)
     applied = apply_env(ws / ".env")
     report = _preflight(ws, team)

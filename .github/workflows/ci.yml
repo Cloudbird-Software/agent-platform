@@ -72,8 +72,9 @@ jobs:
   vendor:
     # vendor 声明快照对账（ADR-0025）：快照实测 digest 必须与 PROVENANCE 一致——
     # 绕过 agent-registry PR 流程手改 vendor 在此 fail-closed。
+    # drill：开箱即用终验演练（init→env→doctor→dry-run→ctl→对抗注入→恢复）。
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,6 +85,7 @@ jobs:
       - run: |
           pipx install uv
           uv run python scripts/vendor_registry.py
+          uv run python scripts/drill.py
 
   deps:
     if: github.event_name == 'pull_request'
