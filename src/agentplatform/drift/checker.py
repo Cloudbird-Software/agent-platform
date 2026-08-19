@@ -92,6 +92,10 @@ def check_workspace(
         top = rel.split("/", 1)[0]
         if top in RUNTIME_OWNED:
             continue
+        # Python 字节码缓存：live 执行 import 渲染脚本的运行时副产物，
+        # 不是漂移（任何目录层级的 __pycache__/*.pyc 都忽略）
+        if "__pycache__" in p.parts or p.suffix in (".pyc", ".pyo"):
+            continue
         issues.append(DriftIssue("orphan", f"未记录文件：{rel}"))
 
     return DriftReport(not issues, declared, manifest.spec_digest, issues, checked)

@@ -84,6 +84,17 @@ def test_orphan_injection_detected(env) -> None:
     assert any(i.kind == "orphan" and "evil.py" in i.detail for i in report.issues)
 
 
+def test_pycache_not_orphan(env) -> None:
+    """回归：live 执行 import 渲染脚本产生 __pycache__/*.pyc——运行时
+    字节码缓存不是漂移（误报则用户跑一次 live 后 doctor 永远黄）。"""
+    reg, ws = env
+    cache = ws / "swarmflow" / "__pycache__"
+    cache.mkdir()
+    (cache / "mini-wave.cpython-312.pyc").write_bytes(b"\x00pyc")
+    report = check_workspace(reg, ws)
+    assert not any("pycache" in i.detail or ".pyc" in i.detail for i in report.issues)
+
+
 def test_spec_change_detected(env) -> None:
     reg, ws = env
     team = reg / "registry" / "teams" / "mini-wave.yaml"
