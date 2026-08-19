@@ -72,9 +72,7 @@ class LedgerObserver:
                 payload["detail"] = str(msg)[:200]
         if kind == "workflow_started":
             # 引擎把 META.phases 规范化为 PhasePlan 对象列表——账本只收标量标题
-            payload["phases"] = [
-                _scalar(p) for p in (getattr(event, "phases", None) or [])
-            ]
+            payload["phases"] = [_scalar(p) for p in (getattr(event, "phases", None) or [])]
         self._store.ledger.append(ledger_kind, "mechanism:engine", payload, card_id=self._card_id)
         self._store.flush()
 
