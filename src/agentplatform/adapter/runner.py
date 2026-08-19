@@ -73,7 +73,6 @@ async def run_team_flow(
     """
     try:
         from openjiuwen.agent_teams.workflow.runner import run_swarmflow
-        from openjiuwen.agent_teams.workflow.schema import TeamModelConfig  # noqa: F401
     except ImportError as e:
         raise RunnerError(f"上游运行时不可用：{e}（安装 runtime/requirements.lock 到执行环境）") from e
 
