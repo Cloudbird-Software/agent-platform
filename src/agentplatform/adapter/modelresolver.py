@@ -67,11 +67,25 @@ class GatewayModelResolver:
     """alias 注册表（渲染配置 models 节）+ env 解析。"""
 
     def __init__(self, models: dict[str, dict]) -> None:
-        """models：{alias: {provider, model, base_url(env:X|url), api_key(env:X)}}"""
+        """models：{alias: {provider, model, base_url(env:X|url), api_key(env:X)}}
+
+        registry 含 "default" 键时（load_models_registry 注入），无 hint 的
+        agent() 调用回退 default——上游 backend 对 model=None 的调用会传
+        resolver(None)，此处必须给出确定配置而非 raise（否则 live 全座位崩）。
+        """
         self._models = dict(models)
 
-    def resolve(self, alias: str) -> ResolvedModel:
-        entry = self._models.get(alias)
+    def resolve(self, alias: str | None) -> ResolvedModel:
+        if alias is None:
+            d = self._models.get("default")
+            if d is None:
+                raise ModelResolutionError(
+                    "模型 alias 未指定且 models.json 无 default（agent() 调用缺 options.model）"
+                )
+            alias = "default"
+            entry = d
+        else:
+            entry = self._models.get(alias)
         if entry is None:
             raise ModelResolutionError(f"模型 alias 未登记：{alias}（合法：{sorted(self._models)}）")
         return ResolvedModel(
