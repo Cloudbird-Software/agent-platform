@@ -112,7 +112,10 @@ class CardGate:
 
         self._cards[card_id] = dict(card)
         self._states[card_id] = "ratified"
-        self._ledger.append("cards.ratified", actor, {"fields": sorted(card)}, card_id=card_id, ts=ts)
+        # 事件携带完整卡（事件溯源：重放即可恢复全部状态——fields 仅供冗余校验）
+        self._ledger.append(
+            "cards.ratified", actor, {"fields": sorted(card), "card": dict(card)}, card_id=card_id, ts=ts
+        )
         return card_id
 
     # ---- 生命周期 ----
@@ -159,3 +162,26 @@ class CardGate:
     # ---- 读 ----
     def card(self, card_id: str) -> dict:
         return dict(self._cards[card_id])
+
+    def states(self) -> dict[str, str]:
+        return dict(self._states)
+
+    # ---- 重放恢复（事件溯源）----
+    @classmethod
+    def from_events(cls, ledger: EventLedger) -> CardGate:
+        """从账本事件重建内存状态（恢复后可继续增量 append——与 observe 共享语义）。"""
+        gate = cls(ledger)
+        for e in ledger.events():
+            if e.kind == "cards.ratified" and e.card_id:
+                card = e.payload.get("card")
+                if card is None:  # 兼容不带完整卡的旧账本：fields 兜底
+                    card = {f: None for f in e.payload.get("fields", [])}
+                    card["id"] = e.card_id
+                gate._cards[e.card_id] = dict(card)
+                gate._states[e.card_id] = "ratified"
+            elif e.kind.startswith("card.") and e.card_id:
+                if e.kind == "card.resumed":
+                    gate._states[e.card_id] = e.payload.get("to", "building")
+                else:
+                    gate._states[e.card_id] = e.kind.removeprefix("card.")
+        return gate

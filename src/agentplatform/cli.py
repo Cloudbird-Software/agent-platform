@@ -138,6 +138,25 @@ def _cmd_drift_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_tui(args: argparse.Namespace) -> int:
+    from agentplatform.observe import RuntimeStore
+    from agentplatform.observe.tui import run_tui
+
+    run_tui(
+        lambda: RuntimeStore.open(args.state),
+        interval_s=args.interval,
+        rounds=args.rounds,
+        color=None if args.color else False,
+    )
+    return 0
+
+
+def _cmd_ctl(args: argparse.Namespace) -> int:
+    from agentplatform.observe.agentctl import dispatch
+
+    return dispatch(args.verb_args, args.state)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ap", description="agent-platform 控制台")
     sub = parser.add_subparsers(dest="command")
@@ -188,6 +207,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_dwatch.add_argument("--interval", type=float, default=30.0)
     p_dwatch.add_argument("--rounds", type=int, default=None)
     p_dwatch.set_defaults(func=_cmd_drift_watch)
+
+    p_tui = sub.add_parser("tui", help="内部运作仪表盘（事件流投影，实时重绘）")
+    p_tui.add_argument("--state", required=True, help="workspace/state 目录（RuntimeStore）")
+    p_tui.add_argument("--interval", type=float, default=2.0, help="刷新间隔秒")
+    p_tui.add_argument("--rounds", type=int, default=None, help="帧数（默认无限，Ctrl-C 退出）")
+    p_tui.add_argument("--color", action="store_true", help="强制颜色（默认 NO_COLOR 环境变量决定）")
+    p_tui.set_defaults(func=_cmd_tui)
+
+    p_ctl = sub.add_parser("ctl", help="干预动词（JSON 输出——供外部 agent 调用）")
+    p_ctl.add_argument("--state", default="workspace/state", help="state 目录")
+    p_ctl.add_argument("verb_args", nargs=argparse.REMAINDER, help="动词及参数（ap ctl help 列出全部）")
+    p_ctl.set_defaults(func=_cmd_ctl)
 
     return parser
 

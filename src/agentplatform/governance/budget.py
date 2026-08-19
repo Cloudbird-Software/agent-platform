@@ -79,6 +79,13 @@ class BudgetGovernor:
         if category in EXEMPT_CATEGORIES:
             # 记账到 overhead 面但永不拒绝——即使 overhead 超支也放行
             self._overhead_spent += amount_usd
+            self.ledger.append(
+                "budget.spent",
+                "mechanism:scheduler",
+                {"amount": amount_usd, "category": category, "exempt": True},
+                card_id=card_id,
+                ts=ts,
+            )
             return BudgetResult(True, self._frozen)
 
         if self._frozen:
@@ -92,6 +99,13 @@ class BudgetGovernor:
             a = self._cards.setdefault(card_id, _CardAccount())
             a.usd += amount_usd
             a.tokens += tokens
+        self.ledger.append(
+            "budget.spent",
+            "mechanism:scheduler",
+            {"amount": amount_usd, "category": category, "tokens": tokens, "total_spent": self._spent},
+            card_id=card_id,
+            ts=ts,
+        )
 
         if self._spent > self.envelope_usd:
             self._freeze(f"envelope 超限：{self._spent:.2f} > {self.envelope_usd:.2f}")
@@ -116,3 +130,40 @@ class BudgetGovernor:
         if not self._frozen:
             self._frozen = True
             self.ledger.append("wave.frozen", "mechanism:scheduler", {"reason": reason})
+
+    # ---- 重放恢复（事件溯源）----
+    @classmethod
+    def from_events(
+        cls,
+        ledger: EventLedger,
+        *,
+        envelope_usd: float,
+        overhead_usd: float,
+        wall_clock_cap_s: float | None = None,
+    ) -> BudgetGovernor:
+        """从账本事件重建账面（spent/overhead/elapsed/frozen/卡账户）。
+
+        注意：重放只恢复账面数字，不重复触发熔断——冻结是历史事实（wave.frozen
+        事件已存在），恢复后 frozen 态延续。
+        """
+        gov = cls(
+            envelope_usd=envelope_usd,
+            overhead_usd=overhead_usd,
+            ledger=ledger,
+            wall_clock_cap_s=wall_clock_cap_s,
+        )
+        for e in ledger.events():
+            if e.kind == "budget.spent":
+                amt = float(e.payload.get("amount", 0))
+                if e.payload.get("exempt"):
+                    gov._overhead_spent += amt
+                else:
+                    gov._spent += amt
+                    cid = e.card_id
+                    if cid is not None:
+                        a = gov._cards.setdefault(cid, _CardAccount())
+                        a.usd += amt
+                        a.tokens += int(e.payload.get("tokens", 0))
+            elif e.kind == "wave.frozen":
+                gov._frozen = True
+        return gov
