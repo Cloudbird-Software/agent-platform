@@ -178,6 +178,13 @@ class TestGatewayModelResolver:
         assert d["model_client_config"]["api_key"] == "sk-x"
         assert d["model_request_config"]["model"] == "deepseek-chat"
 
+    def test_callable_sets_verify_ssl_false(self, monkeypatch) -> None:
+        """上游 verify_ssl 默认 True 且要求 ssl_cert——http 内网网关开箱即崩（回归）。"""
+        monkeypatch.setenv("GW_KEY", "sk-x")
+        monkeypatch.setenv("GW_BASE", "http://gw:4000/v1")
+        d = GatewayModelResolver(self.models).as_callable()("deep")
+        assert d["model_client_config"]["verify_ssl"] is False
+
 
 # ── runner（mock 上游——装配逻辑不依赖真实 openjiuwen）───────────────
 
