@@ -1,0 +1,23 @@
+id: mini-builder
+version: 1.0.0
+status: approved
+archetype: builder
+trust_zone: trusted_control
+role: "迷你夹具：builder"
+identity:
+  prompt_ref: registry/identities/mini-builder.md
+model:
+  alias: coder-fast
+  temperature: 0.2
+capabilities:
+  skills: [skill:mini-skill]
+  tools: [tool:mini-read]
+  allow: [fs_read, fs_write_sandbox]
+isolation: private
+approval: auto
+io_contract:
+  input: {schema_ref: registry/schemas/task-in.json}
+  output: {schema_ref: registry/schemas/findings.json}
+workspace:
+  scope: private
+  root: env:BUILDER_WORKSPACE_ROOT

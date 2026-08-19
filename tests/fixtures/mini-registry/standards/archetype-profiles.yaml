@@ -1,0 +1,10 @@
+version: 2
+profiles:
+  builder:
+    kind: llm
+    trust_zone: trusted_control
+    mission: 迷你夹具
+  delivery_squad:
+    kind: llm
+    trust_zone: trusted_control
+    mission: 迷你夹具团队原型
