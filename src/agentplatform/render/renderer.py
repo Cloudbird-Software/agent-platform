@@ -19,15 +19,29 @@ def _dump_yaml(doc: dict) -> str:
 
 
 class Renderer:
-    """纯函数渲染：同 (spec_digest, renderer_version) → 字节级相同输出。"""
+    """纯函数渲染：同 (spec_digest, renderer_version) → 字节级相同输出。
 
-    def render(self, snap: SpecSnapshot, out_dir: str | Path, *, clean: bool = True) -> RenderManifest:
+    include_flows：连同 SwarmFlow 编译产物（swarmflow/<team>.py）一并写出
+    并纳入 manifest 指纹账本——输出面的完整身份。
+    """
+
+    def render(
+        self,
+        snap: SpecSnapshot,
+        out_dir: str | Path,
+        *,
+        clean: bool = True,
+        include_flows: bool = True,
+    ) -> RenderManifest:
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         if clean:
-            for p in out.iterdir():
+            for p in sorted(out.rglob("*"), reverse=True):
                 if p.is_file():
                     p.unlink()
+            for p in sorted(out.rglob("*")):
+                if p.is_dir():
+                    p.rmdir()
 
         config, notes = build_config(snap, snap.root)
         config_yaml = _dump_yaml(config)
@@ -37,6 +51,19 @@ class Renderer:
         collect_env_vars(config, env_refs)
 
         files = {CONFIG_NAME: _sha(config_yaml)}
+
+        if include_flows:
+            from agentplatform.flow import load_phase_graph
+            from agentplatform.flow.codegen import flow_outputs
+
+            graph = load_phase_graph(snap.root)
+            for rel, text in sorted(flow_outputs(snap, graph).items()):
+                target = out / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(text, encoding="utf-8")
+                files[rel] = _sha(text)
+            notes = {**notes, "phase_graph_digest": graph.digest}
+
         manifest = RenderManifest(
             spec_digest=snap.digest,
             renderer_version=agentplatform.__version__,
