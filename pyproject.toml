@@ -16,16 +16,12 @@ ap = "agentplatform.cli:main"
 agentctl = "agentplatform.observe.ctl:main"
 
 [project.optional-dependencies]
-# 上游运行时（重依赖，Docker 镜像/本机完整部署时装）。
-# 钉版策略（ADR-0025）：PyPI wheel 双钉——jiuwenswarm==0.2.3 的 wheel 已把
-# openjiuwen 钉到 ==0.1.16（其源码分支的 git@develop 滚动依赖不进入 wheel），
-# 此处显式同版双钉使供应链在 lockfile 一眼可审。
-runtime = [
-    "openjiuwen==0.1.16",
-    "jiuwenswarm==0.2.3",
-]
+# dev 依赖之外的一切上游运行时（openjiuwen/jiuwenswarm）不走本文件——
+# 它们的传递树含未发修复版的高危项（chromadb 预_auth RCE 等），进了 uv.lock
+# 会被 dependency-graph 摄取，把每个无关 PR 的 deps 门禁染红。运行时钉版
+# 收敛到 runtime/requirements.in → requirements.lock（独立审计面，ADR-0025）。
 dev = [
-    "pytest>=8.2,<9",
+    "pytest>=9.0.3,<10",
     "pytest-cov>=5,<7",
     "ruff==0.14.0",
 ]

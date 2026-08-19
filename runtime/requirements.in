@@ -1,0 +1,14 @@
+# 上游运行时钉版（ADR-0025）——独立于 uv.lock 的第二锁面。
+#
+# 为什么不进 pyproject/uv.lock：
+#   openjiuwen==0.1.16 的 wheel 依赖 fastmcp>=2.14.2,<3.0、jiuwenswarm==0.2.3
+#   依赖 chromadb>=1.5.4——修复版均未发布（fastmcp 修复在 3.2.0，被上游 <3.0
+#   钉死；chromadb 1.5.9 是 last_affected 且无新版）。该树若进 uv.lock 会被
+#   dependency-graph 摄取，每个 PR 的 dep-review 都被上游未修漏洞染红。
+#   故运行时树收敛到本文件 → requirements.lock，由 CI 的 runtime-audit 面
+#   （带显式风险准入清单）单独审计。
+#
+# 双钉说明：jiuwenswarm==0.2.3 的 wheel 已把 openjiuwen 钉到 ==0.1.16，
+# 此处显式同版双钉使供应链在 lockfile 一眼可审。
+openjiuwen==0.1.16
+jiuwenswarm==0.2.3
